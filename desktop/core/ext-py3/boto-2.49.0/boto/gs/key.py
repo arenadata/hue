@@ -406,7 +406,7 @@ class Key(S3Key):
     def set_contents_from_file(self, fp, headers=None, replace=True,
                                cb=None, num_cb=10, policy=None, md5=None,
                                res_upload_handler=None, size=None, rewind=False,
-                               if_generation=None):
+                               if_generation=None, reduced_redundancy=None, query_args=None):
         """
         Store an object in GS using the name of the Key object as the
         key in GS and the contents of the file pointed to by 'fp' as the
@@ -576,10 +576,10 @@ class Key(S3Key):
                 headers['x-goog-if-generation-match'] = str(if_generation)
 
             if res_upload_handler:
-                res_upload_handler.send_file(self, fp, headers, cb, num_cb)
+                res_upload_handler.send_file(self, fp, headers, cb, num_cb, query_args=query_args)
             else:
                 # Not a resumable transfer so use basic send_file mechanism.
-                self.send_file(fp, headers, cb, num_cb, size=size)
+                self.send_file(fp, headers, cb, num_cb, size=size, query_args=query_args)
 
     def set_contents_from_filename(self, filename, headers=None, replace=True,
                                    cb=None, num_cb=10, policy=None, md5=None,
