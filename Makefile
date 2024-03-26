@@ -133,7 +133,7 @@ endif
 ###################################
 
 .PHONY: virtual-env
-virtual-env: virtual-env2.7 virtual-env3.8 virtual-env3.9
+virtual-env: virtual-env2.7 virtual-env3.8 virtual-env3.9 virtual-env3.10
 
 .PHONY: virtual-env2.7
 virtual-env2.7: $(BLD_DIR_ENV)/stamp
@@ -185,6 +185,34 @@ ifeq ($(PYTHON_VER),python3.9)
 	@echo "--- Creating virtual environment at $(BLD_DIR_ENV) using $(PYTHON_VER)"
 	@$(SYS_PYTHON) -m pip install --upgrade pip==22.2.2
 	@$(SYS_PIP) install virtualenv==20.19.0 virtualenv-make-relocatable==0.0.1
+	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
+	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
+	 fi
+	@virtualenv -p $(PYTHON_VER) $(BLD_DIR_ENV)
+	@echo "--- Virtual environment $(BLD_DIR_ENV) ready"
+	@touch $@
+	@echo '--- Installing PIP_MODULES in virtual-env'
+	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
+	  echo '--- Installing $(REQUIREMENT_PPC64LE_FILE_PY39) into virtual-env via $(ENV_PIP)'; \
+	  $(ENV_PIP) install -r $(REQUIREMENT_PPC64LE_FILE_PY39); \
+	  echo '--- Finished $(REQUIREMENT_PPC64LE_FILE_PY39) into virtual-env'; \
+	 else \
+	  echo '--- Installing $(REQUIREMENT_FILE) into virtual-env via $(ENV_PIP)'; \
+	  $(ENV_PIP) install -r $(REQUIREMENT_FILE); \
+	  echo '--- Finished $(REQUIREMENT_FILE) into virtual-env'; \
+         fi
+	@$(ENV_PIP) install $(NAVOPTAPI_WHL)
+	@echo '--- Finished $(NAVOPTAPI_WHL) into virtual-env'
+	@touch $(REQUIREMENT_DOT_FILE)
+endif
+
+.PHONY: virtual-env3.10
+virtual-env3.10: $(BLD_DIR_ENV)/stamp
+$(BLD_DIR_ENV)/stamp:
+ifeq ($(PYTHON_VER),python3.10)
+	@echo "--- Creating virtual environment at $(BLD_DIR_ENV) using $(PYTHON_VER)"
+	@$(SYS_PYTHON) -m pip install --upgrade pip==24.0
+	@$(SYS_PIP) install virtualenv==20.25.1 virtualenv-make-relocatable==0.0.1
 	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
 	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
 	 fi
