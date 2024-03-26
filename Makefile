@@ -216,7 +216,7 @@ ifeq ($(PYTHON_VER),python3.10)
 	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
 	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
 	 fi
-	@virtualenv -p $(PYTHON_VER) $(BLD_DIR_ENV)
+	@$(PYTHON_DIR)/bin/virtualenv -p $(PYTHON_VER) $(BLD_DIR_ENV)
 	@echo "--- Virtual environment $(BLD_DIR_ENV) ready"
 	@touch $@
 	@echo '--- Installing PIP_MODULES in virtual-env'
