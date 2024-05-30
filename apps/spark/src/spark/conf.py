@@ -18,6 +18,7 @@
 import logging
 import os
 import sys
+import socket
 
 from desktop.conf import default_ssl_validate
 from desktop.lib.conf import Config, coerce_bool
@@ -100,6 +101,18 @@ USE_SASL = Config(
   type=coerce_bool
 )
 
+SPARK_PRINCIPAL = Config(
+  key='spark_principal',
+  help=_t("Kerberos principal name for Spark. Typically 'spark/hostname.foo.com'."),
+  type=str,
+  default="impala/%s" % socket.getfqdn())
+
+SPARK_IMPERSONATION_ENABLED = Config(
+  key='spark_impersonation_enabled',
+  help=_t("Turn on/off impersonation mechanism when talking to Spark."),
+  type=coerce_bool,
+  default=True
+)
 
 def get_livy_server_url():
   url = LIVY_SERVER_URL.get()
