@@ -291,12 +291,14 @@ def get_query_server_config(name='beeswax', connector=None):
         }
 
     if name == 'sparksql':  # Extends Hive as very similar
-      from spark.conf import SQL_SERVER_HOST as SPARK_SERVER_HOST, SQL_SERVER_PORT as SPARK_SERVER_PORT, USE_SASL as SPARK_USE_SASL
+      from spark.conf import SQL_SERVER_HOST as SPARK_SERVER_HOST, SQL_SERVER_PORT as SPARK_SERVER_PORT, USE_SASL as SPARK_USE_SASL, SPARK_PRINCIPAL, SPARK_IMPERSONATION_ENABLED
 
       query_server.update({
           'server_name': 'sparksql',
           'server_host': SPARK_SERVER_HOST.get(),
           'server_port': SPARK_SERVER_PORT.get(),
+          'principal': SPARK_PRINCIPAL.get(),
+          'impersonation_enabled': SPARK_IMPERSONATION_ENABLED.get(),
           'use_sasl': SPARK_USE_SASL.get()
       })
 
