@@ -187,7 +187,7 @@
   window.RAZ_IS_ENABLED = '${ RAZ.IS_ENABLED.get() }' === 'True';
 
   window.ENABLE_HISTORY_V2 = '${ hasattr(ENABLE_HISTORY_V2, 'get') and ENABLE_HISTORY_V2.get() }' === 'True';
-  window.ENABLE_HIVE_QUERY_BROWSER = '${ hasattr(ENABLE_QUERY_BROWSER, 'get') and ENABLE_QUERY_BROWSER.get() }' === 'True';
+  window.ENABLE_HIVE_QUERY_BROWSER = '${ hasattr(ENABLE_HIVE_QUERY_BROWSER, 'get') and ENABLE_HIVE_QUERY_BROWSER.get() }' === 'True';
   window.ENABLE_QUERY_BROWSER = '${ hasattr(ENABLE_QUERY_BROWSER, 'get') and ENABLE_QUERY_BROWSER.get() }' === 'True';
   window.ENABLE_SCHEDULED_TASKS = '${ hasattr(ENABLE_SCHEDULED_TASKS, 'get') and ENABLE_SCHEDULED_TASKS.get() }' === 'True';
   window.ENABLE_LIVY_BROWSER = '${ hasattr(ENABLE_LIVY_BROWSER, 'get') and ENABLE_LIVY_BROWSER.get() }' === 'True';
