@@ -62,7 +62,7 @@ class JdbcApi(Api):
     if self.cache_key in API_CACHE:
       self.db = API_CACHE[self.cache_key]
     elif 'password' in self.options:
-      username = self.options.get('user') or user.username
+      username = self.user.username
       impersonation_property = self.options.get('impersonation_property')
       self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
         impersonation_property=impersonation_property, impersonation_user=user.username)
@@ -76,7 +76,7 @@ class JdbcApi(Api):
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
       if 'password' in properties:
-        user = properties.get('user') or self.options.get('user')
+        user = self.user.username
         props['properties'] = {'user': user}
         self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'))
         self.db.test_connection(throw_exception=True)
