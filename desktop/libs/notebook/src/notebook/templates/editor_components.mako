@@ -1998,7 +1998,7 @@ else:
       <div class="span6">
         <div class="input-prepend">
           <span class="add-on muted"><i class="fa fa-user"></i></span>
-          <input name="username" type="text" data-bind="value: $root.authSessionUsername" placeholder="${ _('Username') }"/>
+          <input name="username" type="text" data-bind="value: $root.authSessionUsername" placeholder="${ _('Username') }" readonly/>
         </div>
       </div>
       <div class="span6">
