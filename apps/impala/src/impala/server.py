@@ -30,7 +30,7 @@ from beeswax.server.hive_server2_lib import HiveServerClient
 
 from ImpalaService import ImpalaHiveServer2Service
 from impala.impala_flags import get_webserver_certificate_file, is_webserver_spnego_enabled, is_kerberos_enabled
-from impala.conf import DAEMON_API_USERNAME, DAEMON_API_PASSWORD, DAEMON_API_PASSWORD_SCRIPT, DAEMON_API_AUTH_SCHEME, COORDINATOR_URL
+from impala.conf import DAEMON_API_USERNAME, DAEMON_API_PASSWORD, DAEMON_API_PASSWORD_SCRIPT, DAEMON_API_AUTH_SCHEME, COORDINATOR_URL, SSL
 
 if sys.version_info[0] > 2:
   from django.utils.translation import gettext as _
@@ -149,6 +149,7 @@ class ImpalaDaemonApi(object):
     self._security_enabled = is_kerberos_enabled()
     self._webserver_spnego_enabled = is_webserver_spnego_enabled()
     self._thread_local = threading.local()
+    self._client.set_verify(SSL.VALIDATE.get())
 
     # You can set username/password for Impala Web UI which overrides kerberos
     daemon_api_pwd = \
