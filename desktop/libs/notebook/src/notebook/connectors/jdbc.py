@@ -203,11 +203,13 @@ class Assist(object):
         "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
       return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'TABLE_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
+      if 'TABLE_COMMENT' in str(e).upper():
+        LOG.warning('TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
         tables, description = query_and_fetch(self.db,
           "SELECT TABLE_NAME, NULL as TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
         return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
+      else:
+        LOG.error(f'Unable to get tables for "{database}":', exc_info=True)
 
   def get_columns(self, database, table):
     columns = self.get_columns_full(database, table)
@@ -220,13 +222,15 @@ class Assist(object):
           database, table))
       return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'COLUMN_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
+      if 'COLUMN_COMMENT' in str(e).upper():
+        LOG.warning('COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
         columns, description = query_and_fetch(self.db,
           "SELECT COLUMN_NAME, DATA_TYPE, NULL as COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS "
           "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (
             database, table))
         return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
+      else:
+        LOG.error(f'Unable to get columns for "{database}.{table}":', exc_info=True)
 
   def get_sample_data(self, database, table, column=None):
     column = column or '*'
