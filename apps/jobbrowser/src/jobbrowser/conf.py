@@ -80,6 +80,14 @@ ENABLE_SCHEDULED_TASKS = Config(
   default=False
 )
 
+ENABLE_LIVY_BROWSER = Config(
+  key="enable_livy_browser",
+  help=_("Show the `Livy` tasks section."),
+  type=coerce_bool,
+  default=False
+
+)
+
 ENABLE_HISTORY_V2 = Config(
   key="enable_history_v2",
   help=_("Show the version 2 of job/query History which unifies the all into one."),

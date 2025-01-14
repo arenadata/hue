@@ -80,6 +80,7 @@ export default class JobBrowserViewModel {
         this.appConfig()?.scheduler?.interpreter_names.indexOf('celery-beat') !== -1;
 
       const livyInterfaceCondition = () =>
+        window.ENABLE_LIVY_BROWSER &&
         !this.isMini() &&
         this.appConfig()?.editor &&
         (this.appConfig().editor.interpreter_names.indexOf('pyspark') !== -1 ||
