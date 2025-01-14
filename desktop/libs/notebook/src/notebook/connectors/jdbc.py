@@ -65,7 +65,7 @@ class JdbcApi(Api):
       username = self.user.username
       impersonation_property = self.options.get('impersonation_property')
       self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
-        impersonation_property=impersonation_property, impersonation_user=user.username)
+        impersonation_property=impersonation_property, impersonation_user=username)
 
   def create_session(self, lang=None, properties=None):
     global API_CACHE
@@ -78,7 +78,9 @@ class JdbcApi(Api):
       if 'password' in properties:
         user = self.user.username
         props['properties'] = {'user': user}
-        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'))
+        impersonation_property = self.options.get('impersonation_property')
+        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'),
+                                                   impersonation_property=impersonation_property, impersonation_user=user)
         self.db.test_connection(throw_exception=True)
 
     if self.db is None:
