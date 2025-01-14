@@ -73,6 +73,13 @@ ENABLE_HIVE_QUERY_BROWSER = Config(
   default=False
 )
 
+ENABLE_SCHEDULED_TASKS = Config(
+  key="enable_scheduled_tasks",
+  help=_("Show the `Scheduled Tasks` section for the celery-beat tasks. If task_server enabled."),
+  type=coerce_bool,
+  default=False
+)
+
 ENABLE_HISTORY_V2 = Config(
   key="enable_history_v2",
   help=_("Show the version 2 of job/query History which unifies the all into one."),

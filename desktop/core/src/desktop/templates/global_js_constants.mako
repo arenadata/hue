@@ -30,7 +30,7 @@
   from hadoop.conf import UPLOAD_CHUNK_SIZE
   from indexer.conf import ENABLE_NEW_INDEXER
   from jobbrowser.conf import ENABLE_HISTORY_V2, ENABLE_QUERY_BROWSER, ENABLE_HIVE_QUERY_BROWSER, MAX_JOB_FETCH, \
-      QUERY_STORE
+      QUERY_STORE, ENABLE_SCHEDULED_TASKS
   from filebrowser.conf import SHOW_UPLOAD_BUTTON, REMOTE_STORAGE_HOME, MAX_FILE_SIZE_UPLOAD_LIMIT
   from filebrowser.views import MAX_FILEEDITOR_SIZE
   from indexer.conf import ENABLE_NEW_INDEXER, ENABLE_DIRECT_UPLOAD, ENABLE_SQOOP, ENABLE_KAFKA, ENABLE_ALTUS, \
@@ -200,6 +200,7 @@
   window.ENABLE_HISTORY_V2 = '${ hasattr(ENABLE_HISTORY_V2, 'get') and ENABLE_HISTORY_V2.get() }' === 'True';
   window.ENABLE_HIVE_QUERY_BROWSER = '${ hasattr(ENABLE_HIVE_QUERY_BROWSER, 'get') and ENABLE_HIVE_QUERY_BROWSER.get() }' === 'True';
   window.ENABLE_QUERY_BROWSER = '${ hasattr(ENABLE_QUERY_BROWSER, 'get') and ENABLE_QUERY_BROWSER.get() }' === 'True';
+  window.ENABLE_SCHEDULED_TASKS = '${ hasattr(ENABLE_SCHEDULED_TASKS, 'get') and ENABLE_SCHEDULED_TASKS.get() }' === 'True';
   window.ENABLE_QUERY_STORE = '${ hasattr(QUERY_STORE, 'IS_ENABLED') and hasattr(QUERY_STORE.IS_ENABLED, 'get') and QUERY_STORE.IS_ENABLED.get() }' === 'True'
   window.ENABLE_SQL_SYNTAX_CHECK = '${ conf.ENABLE_SQL_SYNTAX_CHECK.get() }' === 'True';
 

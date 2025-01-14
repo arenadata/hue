@@ -76,6 +76,7 @@ export default class JobBrowserViewModel {
         !this.isMini() && schedulerInterfaceCondition();
 
       const schedulerBeatInterfaceCondition = () =>
+        window.ENABLE_SCHEDULED_TASKS &&
         this.appConfig()?.scheduler?.interpreter_names.indexOf('celery-beat') !== -1;
 
       const livyInterfaceCondition = () =>
