@@ -23,9 +23,9 @@ from urllib.parse import urlparse
 
 import requests
 from django.utils.translation import gettext as _
-from trino.auth import BasicAuthentication
+from trino.auth import BasicAuthentication, KerberosAuthentication
 from trino.client import ClientSession, TrinoQuery, TrinoRequest
-from trino.exceptions import TrinoConnectionError
+from trino.exceptions import TrinoConnectionError, HttpError
 
 from beeswax import conf, data_export
 from desktop.auth.backend import rewrite_user
@@ -57,6 +57,17 @@ def query_error_handler(func):
       raise QueryError(message)
   return decorator
 
+class PatchedKerberosAuthentication(KerberosAuthentication):
+  def __init__(self, *args, verify_ssl=True, **kwargs):
+    self._verify_ssl = verify_ssl
+    super().__init__(*args, **kwargs)
+
+  def set_http_session(self, http_session):
+    session = super().set_http_session(http_session)
+    if not self._verify_ssl:
+      session.verify = False
+    return session
+
 
 class TrinoApi(Api):
   def __init__(self, user, interpreter=None):
@@ -65,13 +76,29 @@ class TrinoApi(Api):
     self.server_host, self.server_port, self.http_scheme = self.parse_api_url(self.options.get('url'))
     self.auth = None
 
-    auth_username = self.options.get('auth_username', DEFAULT_AUTH_USERNAME.get())
-    auth_password = self.options.get('auth_password', self.get_auth_password())
+    auth_type = self.options.get('auth_type', 'basic').lower()
 
-    if auth_username and auth_password:
-      self.auth_username = auth_username
-      self.auth_password = auth_password
-      self.auth = BasicAuthentication(self.auth_username, self.auth_password)
+    if auth_type == 'kerberos':
+      self.auth = PatchedKerberosAuthentication(
+        config=self.options.get('krb5_config'),
+        service_name=self.options.get('kerberos_service_name', 'HTTP'),
+        mutual_authentication=self.options.get('kerberos_mutual_authentication', False),
+        force_preemptive=self.options.get('kerberos_force_preemptive', False),
+        hostname_override=self.options.get('kerberos_hostname_override'),
+        sanitize_mutual_error_response=self.options.get('kerberos_sanitize_error', True),
+        principal=self.options.get('kerberos_principal'),
+        delegate=self.options.get('kerberos_delegate', False),
+        ca_bundle=self.options.get('kerberos_ca_bundle'),
+        verify_ssl=self.options.get('ssl_cert_ca_verify', True)
+      )
+    else:
+      auth_username = self.options.get('auth_username', DEFAULT_AUTH_USERNAME.get())
+      auth_password = self.options.get('auth_password', self.get_auth_password())
+
+      if auth_username and auth_password:
+        self.auth_username = auth_username
+        self.auth_password = auth_password
+        self.auth = BasicAuthentication(self.auth_username, self.auth_password)
 
     self.session_info = self.create_session()
     self.trino_session = ClientSession(self.user.username, properties=self.session_info['properties'])
@@ -196,22 +223,33 @@ class TrinoApi(Api):
   def check_status(self, notebook, snippet):
     response = {}
     status = 'expired'
-    next_uri = snippet['result']['handle']['next_uri']
+    next_uri = snippet['result']['handle'].get('next_uri')
 
     if next_uri is None:
       status = 'available'
+      _status = None
     else:
-      _response = self.trino_request.get(next_uri)
-      _status = self.trino_request.process(_response)
-      if _status.stats['state'] == 'QUEUED':
-        status = 'waiting'
-      elif _status.stats['state'] == 'RUNNING':
-        status = 'available'  # need to verify
-      else:
-        status = 'available'
+      try:
+        _response = self.trino_request.get(next_uri)
+        _status = self.trino_request.process(_response)
+
+        if _status.stats['state'] == 'QUEUED':
+          status = 'waiting'
+        elif _status.stats['state'] == 'RUNNING':
+          status = 'available'
+        else:
+          status = 'available'
+
+      except HttpError as e:
+        if "Error 410 Gone: Invalid token" in str(e):
+          LOG.debug(f"Trino token expired (410 Gone): {e}")
+          status = 'expired'
+          _status = None
+        else:
+          raise
 
     response['status'] = status
-    response['next_uri'] = _status.next_uri if status != 'available' else next_uri
+    response['next_uri'] = _status.next_uri if _status and status != 'available' else next_uri
     return response
 
   @query_error_handler
@@ -345,7 +383,7 @@ class TrinoApi(Api):
 
     for catalog in catalogs:
       try:
-        query_client = TrinoQuery(self.trino_request, 'SHOW SCHEMAS FROM ' + catalog)
+        query_client = TrinoQuery(self.trino_request, f'SHOW SCHEMAS FROM "{catalog}"')
         response = query_client.execute()
         databases += [f'{catalog}.{item}' for sublist in response.rows for item in sublist]
       except Exception as e:
