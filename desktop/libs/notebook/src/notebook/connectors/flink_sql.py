@@ -86,7 +86,7 @@ class FlinkSqlApi(Api):
       SESSIONS[session_key] = self.db.create_session()
 
     try:
-      self.db.session_heartbeat(session_id=SESSIONS[session_key]['session_id'])
+      self.db.session_heartbeat(session_id=SESSIONS[session_key]['sessionHandle'])
     except Exception as e:
       if 'Session: %(id)s does not exist' % SESSIONS[session_key] in str(e):
         LOG.warning('Session: %(id)s does not exist, opening a new one' % SESSIONS[session_key])
@@ -94,7 +94,7 @@ class FlinkSqlApi(Api):
       else:
         raise e
 
-    SESSIONS[session_key]['id'] = SESSIONS[session_key]['session_id']
+    SESSIONS[session_key]['id'] = SESSIONS[session_key]['sessionHandle']
 
     return SESSIONS[session_key]
 
@@ -180,7 +180,7 @@ class FlinkSqlApi(Api):
     statement_id = snippet['result']['handle']['guid']
     token = n  # rows
 
-    resp = self.db.fetch_results(session['id'], job_id=statement_id, token=token)
+    resp = self.db.fetch_results(session['id'], operation_handle=statement_id, token=token)
 
     next_result = resp.get('next_result_uri')
     if next_result:
@@ -261,34 +261,67 @@ class FlinkSqlApi(Api):
     # session = self._get_session()
     # self.db.close_session(session['id'])
 
+
+  def fetch_results_all(self, session_id, statement):
+    all_data = []
+    columns = []
+
+    resp = self.db.execute_statement(session_id=session_id, statement=statement)
+    operation_handle = resp['operationHandle']
+    result_type = ''
+    next_result_uri = ''
+    token = 0
+
+    # check token value to prevent infinite loop
+    while token < 999:
+      results = self.db.fetch_results(session_id=session_id, operation_handle=operation_handle, token=token)
+      result_type = results['resultType']
+      next_result_uri = results.get('nextResultUri')
+      token += 1
+
+      if not columns:
+        columns = results['results']['columns']
+
+      if results['results']['data']:
+        all_data.extend(results['results']['data'])
+
+      if result_type == 'EOS' or not next_result_uri:
+        break
+
+    return {
+      'columns': columns,
+      'data': all_data
+    }
+
   def _show_databases(self):
     session = self._get_session()
     session_id = session['id']
 
-    resp = self.db.execute_statement(session_id=session_id, statement='SHOW DATABASES')
+    results = self.fetch_results_all(session_id=session_id, statement='SHOW DATABASES')
 
-    return [db[0] for db in resp['results'][0]['data']]
+    return [ db['fields'][0] for db in results['data'] ]
 
   def _show_tables(self, database):
     session = self._get_session()
     session_id = session['id']
 
-    resp = self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
-    resp = self.db.execute_statement(session_id=session_id, statement='SHOW TABLES')
+    self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
 
-    return [table[0] for table in resp['results'][0]['data']]
+    results = self.fetch_results_all(session_id=session_id, statement='SHOW TABLES')
+
+    return [table['fields'][0] for table in results['data']]
 
   def _get_columns(self, database, table):
     session = self._get_session()
     session_id = session['id']
 
-    resp = self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
-    resp = self.db.execute_statement(session_id=session_id, statement='DESCRIBE %(table)s' % {'table': table})
-    columns = resp['results'][0]['data']
+    self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
+    results = self.fetch_results_all(session_id=session_id, statement='DESCRIBE %(table)s' % {'table': table})
+    columns = results['data']
 
     return [{
-        'name': col[0],
-        'type': col[1],  # Types to unify
+        'name': col['fields'][0],
+        'type': col['fields'][1],  # Types to unify
         'comment': '',
       }
       for col in columns
@@ -297,8 +330,7 @@ class FlinkSqlApi(Api):
 
 class FlinkSqlClient():
   '''
-  Implements https://github.com/ververica/flink-sql-gateway
-  Could be a pip module or sqlalchemy dialect in the future.
+  Implements https://nightlies.apache.org/flink/flink-docs-release-2.0/docs/dev/table/sql-gateway/overview/
   '''
 
   def __init__(self, user, api_url):
@@ -332,7 +364,7 @@ class FlinkSqlClient():
   def execute_statement(self, session_id, statement):
     data = {
         "statement": statement,  # required
-        "execution_timeout": ""  # execution time limit in milliseconds, optional, but required for stream SELECT ?
+        "executionTimeout": ""  # execution time limit in milliseconds, optional, but required for stream SELECT ?
     }
 
     return self._root.post(
@@ -343,19 +375,19 @@ class FlinkSqlClient():
       contenttype=_JSON_CONTENT_TYPE
     )
 
-  def fetch_status(self, session_id, job_id):
+  def fetch_status(self, session_id, operation_handle):
     return self._root.get(
-      'sessions/%(session_id)s/jobs/%(job_id)s/status' % {
+      'sessions/%(session_id)s/operations/%(operation_handle)s/status' % {
         'session_id': session_id,
-        'job_id': job_id
+        'operation_handle': operation_handle
       }
     )
 
-  def fetch_results(self, session_id, job_id, token=0):
+  def fetch_results(self, session_id, operation_handle, token=0):
     return self._root.get(
-      'sessions/%(session_id)s/jobs/%(job_id)s/result/%(token)s' % {
+      'sessions/%(session_id)s/operations/%(operation_handle)s/result/%(token)s' % {
         'session_id': session_id,
-        'job_id': job_id,
+        'operation_handle': operation_handle,
         'token': token
       }
     )
