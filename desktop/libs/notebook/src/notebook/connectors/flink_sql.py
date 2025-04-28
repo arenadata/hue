@@ -21,6 +21,7 @@ import sys
 import json
 import logging
 import posixpath
+import time
 
 from django.utils.translation import gettext as _
 
@@ -71,7 +72,7 @@ class FlinkSqlApi(Api):
 
     response = {
       'type': lang,
-      'id': session['session_id']
+      'id': session['id']
     }
 
     return response
@@ -104,28 +105,32 @@ class FlinkSqlApi(Api):
     n = 0
     session = self._get_session()
     session_id = session['id']
-    job_id = None
 
     statement = snippet['statement'].strip().rstrip(';')
 
     resp = self.db.execute_statement(session_id=session_id, statement=statement)
 
-    if resp['statement_types'][0] == 'SELECT':
-      job_id = resp['results'][0]['data'][0][0]
-      data, description = [], []
-      # TODO: change_flags
-    else:
-      data, description = resp['results'][0]['data'], resp['results'][0]['columns']
+    operation_handle = resp['operationHandle']
+
+    #if resp['statement_types'][0] == 'SELECT':
+    #  job_id = resp['results'][0]['data'][0][0]
+    #  data, description = [], []
+    #  # TODO: change_flags
+    #else:
+
+    data, description = [], []
+
+    # data, description = resp['results']['data'][0], resp['results']['columns'][0]
 
     has_result_set = data is not None
 
     return {
-      'sync': job_id is None,
+      'sync': operation_handle is None,
       'has_result_set': has_result_set,
-      'guid': job_id,
+      'guid': operation_handle,
       'result': {
-        'has_more': job_id is not None,
-        'data': data if job_id is None else [],
+        'has_more': operation_handle is not None,
+        'data': data if operation_handle is None else ['test data1'],
         'meta': [{
             'name': col['name'],
             'type': col['type'],
@@ -155,12 +160,16 @@ class FlinkSqlApi(Api):
           try:
             resp = self.db.fetch_status(session['id'], statement_id)
             if resp.get('status') == 'RUNNING':
-              status = 'streaming'
-              response['result'] = self.fetch_result(notebook, snippet, n, False)
+              # status = 'streaming'
+              status = 'available'
+              # response['result'] = self.fetch_result(notebook, snippet, n, False)
             elif resp.get('status') == 'FINISHED':
               status = 'available'
-            elif resp.get('status') == 'FAILED':
+              # response['result'] = self.fetch_result(notebook, snippet, n, False)
+            elif resp.get('status') == 'FAILED' or resp.get('status') == 'ERROR':
               status = 'failed'
+              result_error = self.db.fetch_results(session['id'], operation_handle=statement_id)
+              raise RestException(result_error.get('errors', 'Something went wrong'))
             elif resp.get('status') == 'CANCELED':
               status = 'expired'
           except Exception as e:
@@ -180,24 +189,47 @@ class FlinkSqlApi(Api):
     statement_id = snippet['result']['handle']['guid']
     token = n  # rows
 
-    resp = self.db.fetch_results(session['id'], operation_handle=statement_id, token=token)
+    next_result = ''
+    num_loop = 0
+    resp = {}
 
-    next_result = resp.get('next_result_uri')
+    while num_loop < 9999:
+      resp = self.db.fetch_results(session['id'], operation_handle=statement_id, token=token)
+      next_result = resp.get('nextResultUri')
+      result_type = resp.get('resultType')
+      LOG.info(f"token: {token}")
+
+      if not result_type or result_type != 'NOT_READY':
+        break
+
+      time.sleep(0.1)
+
     if next_result:
-      n = int(next_result.rsplit('/', 1)[-1])
+      LOG.info(f"next_result: {next_result}")
+      n += 1
 
-    return {
+    LOG.info(f"n: {n}")
+    data = []
+
+    if resp['results'].get('data'):
+      data = [row['fields'] for row in resp['results']['data']]
+
+    data_to_return = {
         'has_more': bool(next_result),
-        'data': resp and resp['results'][0]['data'] or [],  # No escaping...
+        'data': data,  # No escaping...
         'meta': [{
             'name': column['name'],
-            'type': column['type'],
+            'type': column['logicalType']['type'],
             'comment': ''
           }
-          for column in resp['results'][0]['columns'] if resp
+          for column in resp['results']['columns'] if resp
         ],
         'type': 'table'
     }
+
+    LOG.info(f"data_to_return: {data_to_return}")
+
+    return data_to_return
 
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
@@ -221,20 +253,22 @@ class FlinkSqlApi(Api):
     return response
 
   @query_error_handler
-  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
+  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=None, is_async=False, operation=None):
     if operation == 'hello':
       snippet['statement'] = "SELECT 'Hello World!'"
-
-    notebook = {}
-    sample = self.execute(notebook, snippet)
+    else:
+      snippet['statement'] = f"SELECT `{column}` from {database}.{table} LIMIT 5"
 
     response = {
       'status': 0,
       'result': {}
     }
 
-    response['rows'] = sample['result']['data']
-    response['full_headers'] = sample['result']['meta']
+    sample = self.fetch_results_all(self._get_session()['id'], statement=snippet['statement'])
+    data = [ db['fields'][0] for db in sample['data'] ]
+
+    response['rows'] = data
+    response['full_headers'] = sample['columns']
 
     return response
 
@@ -244,7 +278,7 @@ class FlinkSqlApi(Api):
 
     try:
       if session and statement_id:
-        self.db.close_statement(session_id=session['id'], job_id=statement_id)
+        self.db.close_statement(session_id=session['id'], operation_handle=statement_id)
       else:
         return {'status': -1}  # missing operation ids
     except Exception as e:
@@ -268,22 +302,25 @@ class FlinkSqlApi(Api):
 
     resp = self.db.execute_statement(session_id=session_id, statement=statement)
     operation_handle = resp['operationHandle']
-    result_type = ''
-    next_result_uri = ''
     token = 0
 
     # check token value to prevent infinite loop
-    while token < 999:
+    while token < 9999:
       results = self.db.fetch_results(session_id=session_id, operation_handle=operation_handle, token=token)
       result_type = results['resultType']
       next_result_uri = results.get('nextResultUri')
-      token += 1
+
+      if result_type == 'NOT_READY':
+        time.sleep(0.1)
+        continue
 
       if not columns:
         columns = results['results']['columns']
 
       if results['results']['data']:
         all_data.extend(results['results']['data'])
+
+      token += 1
 
       if result_type == 'EOS' or not next_result_uri:
         break
@@ -326,6 +363,12 @@ class FlinkSqlApi(Api):
       }
       for col in columns
     ]
+
+  def get_log(self, notebook, snippet, startFrom=None, size=None):
+    guid = snippet['result']['handle']['guid'] if snippet.get('result') and snippet['result'].get('handle') and \
+                                                    snippet['result']['handle'].get('guid') else None
+    session_id = self._get_session()['id']
+    return f"session id: {session_id}, operation id: {guid}"
 
 
 class FlinkSqlClient():
@@ -392,11 +435,11 @@ class FlinkSqlClient():
       }
     )
 
-  def close_statement(self, session_id, job_id):
+  def close_statement(self, session_id, operation_handle):
     return self._root.delete(
-      'sessions/%(session_id)s/jobs/%(job_id)s' % {
+      'sessions/%(session_id)s/operations/%(operation_handle)s/close' % {
         'session_id': session_id,
-        'job_id': job_id,
+        'operation_handle': operation_handle,
       }
     )
 
