@@ -22,7 +22,9 @@ import json
 import logging
 import posixpath
 import time
+import re
 
+import requests
 from django.utils.translation import gettext as _
 
 from desktop.lib.i18n import force_unicode
@@ -125,22 +127,29 @@ class FlinkSqlApi(Api):
     has_result_set = data is not None
 
     return {
-      'sync': operation_handle is None,
-      'has_result_set': has_result_set,
+      #'sync': operation_handle is None,
+      'sync': False,
+      #'has_result_set': has_result_set,
+      'has_result_set': True,
       'guid': operation_handle,
       'result': {
-        'has_more': operation_handle is not None,
-        'data': data if operation_handle is None else ['test data1'],
-        'meta': [{
-            'name': col['name'],
-            'type': col['type'],
-            'comment': ''
-          }
-          for col in description
-        ]
-        if has_result_set else [],
+        'has_more': True,
+        'data': [''],
         'type': 'table'
       }
+      #'result': {
+      #  'has_more': operation_handle is not None,
+      #  'data': data if operation_handle is None else [''],
+      #  'meta': [{
+      #      'name': col['name'],
+      #      'type': col['type'],
+      #      'comment': ''
+      #    }
+      #    for col in description
+      #  ]
+      #  if has_result_set else [],
+      #  'type': 'table'
+      #}
     }
 
   @query_error_handler
@@ -160,16 +169,20 @@ class FlinkSqlApi(Api):
           try:
             resp = self.db.fetch_status(session['id'], statement_id)
             if resp.get('status') == 'RUNNING':
-              # status = 'streaming'
               status = 'available'
-              # response['result'] = self.fetch_result(notebook, snippet, n, False)
             elif resp.get('status') == 'FINISHED':
               status = 'available'
-              # response['result'] = self.fetch_result(notebook, snippet, n, False)
             elif resp.get('status') == 'FAILED' or resp.get('status') == 'ERROR':
               status = 'failed'
-              result_error = self.db.fetch_results(session['id'], operation_handle=statement_id)
-              raise RestException(result_error.get('errors', 'Something went wrong'))
+              try:
+                # TODO: simplify error message on sql gateway side, : see https://issues.apache.org/jira/browse/FLINK-29646
+                result_error = self.db.fetch_results(session['id'], operation_handle=statement_id)
+              except RestException as restException:
+                orig_error_str = str(restException.get_parent_ex().response.json().get('errors', 'Something went wrong'))
+                java_errors = re.findall(r"^.*(Caused by:.+)$", orig_error_str)
+                new_error_str = java_errors[-1] if java_errors else orig_error_str
+                new_error_str = new_error_str.replace("\\n", "\n").replace("\\t", "\t")
+                raise RestException(new_error_str)
             elif resp.get('status') == 'CANCELED':
               status = 'expired'
           except Exception as e:
@@ -189,11 +202,7 @@ class FlinkSqlApi(Api):
     statement_id = snippet['result']['handle']['guid']
     token = n  # rows
 
-    next_result = ''
-    num_loop = 0
-    resp = {}
-
-    while num_loop < 9999:
+    while True:
       resp = self.db.fetch_results(session['id'], operation_handle=statement_id, token=token)
       next_result = resp.get('nextResultUri')
       result_type = resp.get('resultType')
@@ -215,6 +224,8 @@ class FlinkSqlApi(Api):
       data = [row['fields'] for row in resp['results']['data']]
 
     data_to_return = {
+        'row_count': len(data),
+        'next_uri': next_result,
         'has_more': bool(next_result),
         'data': data,  # No escaping...
         'meta': [{
@@ -271,6 +282,36 @@ class FlinkSqlApi(Api):
     response['full_headers'] = sample['columns']
 
     return response
+
+  @query_error_handler
+  def explain(self, notebook, snippet):
+    statement = snippet['statement'].rstrip(';')
+    explanation = ''
+
+    if statement:
+      try:
+        result = self.fetch_results_all(self._get_session()['id'], statement="EXPLAIN " + snippet['statement'])
+        explanation = [ db['fields'][0] for db in result['data'] ]
+
+      except Exception as e:
+        explanation = str(e)
+
+    return {
+      'status': 0,
+      'explanation': explanation,
+      'statement': statement
+    }
+
+  @query_error_handler
+  def fetch_result_size(self, notebook, snippet):
+    resp = {
+      'rows': 10000,
+      'size': 50000,
+      'message': 'test message'
+    }
+    LOG.info(f"super fetch_result_size: {resp}")
+
+    return resp
 
   def cancel(self, notebook, snippet):
     session = self._get_session()
@@ -391,8 +432,8 @@ class FlinkSqlClient():
   def create_session(self, **properties):
     data = {
         "session_name": "test",  # optional
-        "planner": "blink",  # required, "old"/"blink"
-        "execution_type": "streaming",  # required, "batch"/"streaming"
+        # "planner": "blink",  # required, "old"/"blink"
+        # "execution_type": "streaming",  # required, "batch"/"streaming"
         "properties": {  # optional
             "key": "value"
         }
