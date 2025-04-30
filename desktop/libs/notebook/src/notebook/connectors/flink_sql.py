@@ -40,6 +40,12 @@ SESSION_KEY = '%(username)s-%(connector_name)s'
 
 n = 0
 
+def parse_java_exception_message(message: str):
+  java_errors = re.findall(r".*(Caused by:.+)$", message)
+  message_parsed = java_errors[-1] if java_errors else message
+  message_parsed = message_parsed.replace("\\n", "\n").replace("\\t", "\t")
+
+  return message_parsed
 
 def query_error_handler(func):
   def decorator(*args, **kwargs):
@@ -47,9 +53,9 @@ def query_error_handler(func):
       return func(*args, **kwargs)
     except RestException as e:
       try:
-        message = force_unicode(json.loads(e.message)['errors'])
+        message = parse_java_exception_message(json.loads(e.message)['errors'])
       except Exception:
-        message = e.message
+        message = parse_java_exception_message(e.message)
       message = force_unicode(message)
       raise QueryError(message)
     except Exception as e:
@@ -178,11 +184,8 @@ class FlinkSqlApi(Api):
                 # TODO: simplify error message on sql gateway side, : see https://issues.apache.org/jira/browse/FLINK-29646
                 result_error = self.db.fetch_results(session['id'], operation_handle=statement_id)
               except RestException as restException:
-                orig_error_str = str(restException.get_parent_ex().response.json().get('errors', 'Something went wrong'))
-                java_errors = re.findall(r"^.*(Caused by:.+)$", orig_error_str)
-                new_error_str = java_errors[-1] if java_errors else orig_error_str
-                new_error_str = new_error_str.replace("\\n", "\n").replace("\\t", "\t")
-                raise RestException(new_error_str)
+                error_str = str(restException.get_parent_ex().response.json().get('errors', 'Something went wrong'))
+                raise RestException(error_str)
             elif resp.get('status') == 'CANCELED':
               status = 'expired'
           except Exception as e:
@@ -303,16 +306,6 @@ class FlinkSqlApi(Api):
     }
 
   @query_error_handler
-  def fetch_result_size(self, notebook, snippet):
-    resp = {
-      'rows': 10000,
-      'size': 50000,
-      'message': 'test message'
-    }
-    LOG.info(f"super fetch_result_size: {resp}")
-
-    return resp
-
   def cancel(self, notebook, snippet):
     session = self._get_session()
     statement_id = snippet['result']['handle']['guid']
@@ -479,6 +472,14 @@ class FlinkSqlClient():
   def close_statement(self, session_id, operation_handle):
     return self._root.delete(
       'sessions/%(session_id)s/operations/%(operation_handle)s/close' % {
+        'session_id': session_id,
+        'operation_handle': operation_handle,
+      }
+    )
+
+  def cancel_statement(self, session_id, operation_handle):
+    return self._root.post(
+      'sessions/%(session_id)s/operations/%(operation_handle)s/cancel' % {
         'session_id': session_id,
         'operation_handle': operation_handle,
       }
