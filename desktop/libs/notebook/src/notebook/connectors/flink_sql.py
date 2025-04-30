@@ -293,12 +293,13 @@ class FlinkSqlApi(Api):
 
     return {'status': 0}
 
-  def close_session(self, session):
+  def close_session_idle(self, notebook, session):
     # Avoid closing session on page refresh or editor close for now
     pass
-    # session = self._get_session()
-    # self.db.close_session(session['id'])
 
+  def close_session(self, session):
+    session = self._get_session()
+    self.db.close_session(session['id'])
 
   def fetch_results_all(self, session_id, statement):
     all_data = []
