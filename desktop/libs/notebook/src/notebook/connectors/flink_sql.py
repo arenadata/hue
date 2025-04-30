@@ -213,8 +213,6 @@ class FlinkSqlApi(Api):
         'type': 'table'
     }
 
-    LOG.info(f"data_to_return: {data_to_return}")
-
     return data_to_return
 
   @query_error_handler

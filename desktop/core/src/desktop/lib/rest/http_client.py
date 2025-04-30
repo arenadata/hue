@@ -218,14 +218,9 @@ class HttpClient(object):
       self._session.cookies.clear()
 
     request_kwargs['verify'] = self._session.verify
-    LOG.info("!!!!! request verify: '%s'" % request_kwargs['verify'])
 
     try:
-      LOG.info("!!!request_kwargs: ")
-      LOG.info(request_kwargs)
       resp = getattr(self._session, http_method.lower())(url, **request_kwargs)
-      LOG.info("!!!RESP: ")
-      LOG.info(resp)
       if resp.status_code >= 300:
         resp.raise_for_status()
         raise exceptions.HTTPError(response=resp)
