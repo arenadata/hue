@@ -97,7 +97,7 @@ class FlinkSqlApi(Api):
     try:
       self.db.session_heartbeat(session_id=SESSIONS[session_key]['sessionHandle'])
     except Exception as e:
-      if 'Session: %(id)s does not exist' % SESSIONS[session_key] in str(e):
+      if 'Session \'%(id)s\' does not exist' % SESSIONS[session_key] in str(e):
         LOG.warning('Session: %(id)s does not exist, opening a new one' % SESSIONS[session_key])
         SESSIONS[session_key] = self.db.create_session()
       else:
@@ -120,22 +120,8 @@ class FlinkSqlApi(Api):
 
     operation_handle = resp['operationHandle']
 
-    #if resp['statement_types'][0] == 'SELECT':
-    #  job_id = resp['results'][0]['data'][0][0]
-    #  data, description = [], []
-    #  # TODO: change_flags
-    #else:
-
-    data, description = [], []
-
-    # data, description = resp['results']['data'][0], resp['results']['columns'][0]
-
-    has_result_set = data is not None
-
     return {
-      #'sync': operation_handle is None,
       'sync': False,
-      #'has_result_set': has_result_set,
       'has_result_set': True,
       'guid': operation_handle,
       'result': {
@@ -143,19 +129,6 @@ class FlinkSqlApi(Api):
         'data': [''],
         'type': 'table'
       }
-      #'result': {
-      #  'has_more': operation_handle is not None,
-      #  'data': data if operation_handle is None else [''],
-      #  'meta': [{
-      #      'name': col['name'],
-      #      'type': col['type'],
-      #      'comment': ''
-      #    }
-      #    for col in description
-      #  ]
-      #  if has_result_set else [],
-      #  'type': 'table'
-      #}
     }
 
   @query_error_handler
@@ -167,7 +140,9 @@ class FlinkSqlApi(Api):
     status = 'expired'
 
     if snippet.get('result'):
-      statement_id = snippet['result']['handle']['guid']
+      statement_id = ''
+      if snippet['result'].get('handle'):
+        statement_id = snippet['result']['handle']['guid']
       if session:
         if not statement_id:  # Sync result
           status = 'available'
@@ -209,7 +184,6 @@ class FlinkSqlApi(Api):
       resp = self.db.fetch_results(session['id'], operation_handle=statement_id, token=token)
       next_result = resp.get('nextResultUri')
       result_type = resp.get('resultType')
-      LOG.info(f"token: {token}")
 
       if not result_type or result_type != 'NOT_READY':
         break
@@ -217,10 +191,8 @@ class FlinkSqlApi(Api):
       time.sleep(0.1)
 
     if next_result:
-      LOG.info(f"next_result: {next_result}")
       n += 1
 
-    LOG.info(f"n: {n}")
     data = []
 
     if resp['results'].get('data'):
@@ -424,11 +396,9 @@ class FlinkSqlClient():
 
   def create_session(self, **properties):
     data = {
-        "session_name": "test",  # optional
-        # "planner": "blink",  # required, "old"/"blink"
-        # "execution_type": "streaming",  # required, "batch"/"streaming"
+        "sessionName": "hue_session",  # optional
         "properties": {  # optional
-            "key": "value"
+            # "yarn.application.id": "application_1744112939468_0103" # we can set yarn application id here
         }
     }
     data.update(properties)

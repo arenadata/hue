@@ -1725,7 +1725,7 @@ else:
       <div class="pull-left" data-bind="text: (result.statement_id() + 1)"></div><div class="pull-left">/</div><div class="pull-left" data-bind="text: result.statements_count()"></div>
     </div>
     <!-- ko if: !isCanceling() -->
-    <a class="snippet-side-btn red" data-bind="click: cancel, visible: status() == 'running' || status() == 'starting' || (result.hasMore() && status() != 'canceled' && status() !== 'ready')" title="${ _('Cancel operation') }">
+    <a class="snippet-side-btn red" data-bind="click: cancel, visible: status() == 'running' || status() == 'starting' || (result.hasMore() && status() != 'canceled' && status() != 'ready' && status() != 'failed')" title="${ _('Cancel operation') }">
       <i class="fa fa-fw fa-stop snippet-side-single"></i>
     </a>
     <!-- /ko -->
