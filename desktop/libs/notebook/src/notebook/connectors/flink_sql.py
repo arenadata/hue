@@ -237,7 +237,7 @@ class FlinkSqlApi(Api):
     if operation == 'hello':
       snippet['statement'] = "SELECT 'Hello World!'"
     else:
-      snippet['statement'] = f"SELECT `{column}` from {database}.{table} LIMIT 5"
+      snippet['statement'] = f"SELECT `{column}` from `{database}`.`{table}` LIMIT 5"
 
     response = {
       'status': 0,
@@ -343,7 +343,7 @@ class FlinkSqlApi(Api):
     session = self._get_session()
     session_id = session['id']
 
-    self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
+    self.db.execute_statement(session_id=session_id, statement='USE `%(database)s`' % {'database': database})
 
     results = self.fetch_results_all(session_id=session_id, statement='SHOW TABLES')
 
@@ -353,8 +353,8 @@ class FlinkSqlApi(Api):
     session = self._get_session()
     session_id = session['id']
 
-    self.db.execute_statement(session_id=session_id, statement='USE %(database)s' % {'database': database})
-    results = self.fetch_results_all(session_id=session_id, statement='DESCRIBE %(table)s' % {'table': table})
+    self.db.execute_statement(session_id=session_id, statement='USE `%(database)s`' % {'database': database})
+    results = self.fetch_results_all(session_id=session_id, statement='DESCRIBE `%(table)s`' % {'table': table})
     columns = results['data']
 
     return [{
