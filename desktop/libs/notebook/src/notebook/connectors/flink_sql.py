@@ -413,6 +413,12 @@ class FlinkSqlApi(Api):
       'session': session['id']
     }
 
+  def get_log(self, notebook, snippet, startFrom=None, size=None):
+    guid = snippet['result']['handle'].get('guid') if snippet.get('result') and snippet['result'].get('handle') \
+      else None
+    session_id = self._get_session()['id']
+    return f"session id: {session_id}, operation id: {guid}"
+
   def _check_status_and_fetch_result(self, session_handle, operation_handle):
     resp = self.db.fetch_results(session_handle, operation_handle, 0)
 
