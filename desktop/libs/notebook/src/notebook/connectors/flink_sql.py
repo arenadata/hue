@@ -21,6 +21,8 @@ import sys
 import json
 import logging
 import posixpath
+import re
+import time
 
 from django.utils.translation import gettext as _
 
@@ -221,7 +223,8 @@ class FlinkSqlApi(Api):
     return response
 
   @query_error_handler
-  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
+  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=None, is_async=False,
+                      operation=None):
     if operation == 'hello':
       snippet['statement'] = "SELECT 'Hello World!'"
 
