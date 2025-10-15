@@ -66,7 +66,7 @@ class Jdbc(object):
     if DBPROXY_EXTRA_CLASSPATH.get():
       classpath = '%s:%s' % (DBPROXY_EXTRA_CLASSPATH.get(), classpath)
 
-    self.gateway = JavaGateway.launch_gateway(classpath=classpath)
+    self.gateway = JavaGateway.launch_gateway(classpath=classpath, java_path=None)
 
     self.jdbc_driver = driver_name
     self.db_url = url
