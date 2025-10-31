@@ -184,7 +184,7 @@ class SqlAlchemyApi(Api):
 
     # Enables various SqlAlchemy args to be passed along for both Hive & Presto connectors
     # Refer to SqlAlchemy pyhive for more details
-    if self.options.get('connect_args'):
+    if self.options.get('connect_args') and not isinstance(self.options.get('connect_args'), dict):
       self.options['connect_args'] = json.loads(
           self.options.pop('connect_args')
       )
