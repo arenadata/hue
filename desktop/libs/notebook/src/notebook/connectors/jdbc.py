@@ -59,6 +59,9 @@ class JdbcApi(Api):
     self.db = None
     self.options = interpreter['options']
 
+    if 'enable_auth_form' in self.options and self.options['enable_auth_form'] == 'False':
+      self.options['password'] = ''
+
     if self.cache_key in API_CACHE:
       self.db = API_CACHE[self.cache_key]
     elif 'password' in self.options:
