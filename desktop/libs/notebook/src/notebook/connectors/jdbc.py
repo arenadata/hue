@@ -58,13 +58,16 @@ class JdbcApi(Api):
     self.db = None
     self.options = interpreter['options']
 
+    if 'enable_auth_form' in self.options and self.options['enable_auth_form'] == 'False':
+      self.options['password'] = ''
+
     if self.cache_key in API_CACHE:
       self.db = API_CACHE[self.cache_key]
     elif 'password' in self.options:
-      username = self.options.get('user') or user.username
+      username = self.user.username
       impersonation_property = self.options.get('impersonation_property')
       self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
-        impersonation_property=impersonation_property, impersonation_user=user.username)
+        impersonation_property=impersonation_property, impersonation_user=username)
 
   def create_session(self, lang=None, properties=None):
     global API_CACHE
@@ -75,9 +78,11 @@ class JdbcApi(Api):
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
       if 'password' in properties:
-        user = properties.get('user') or self.options.get('user')
+        user = self.user.username
         props['properties'] = {'user': user}
-        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'))
+        impersonation_property = self.options.get('impersonation_property')
+        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'),
+                                                   impersonation_property=impersonation_property, impersonation_user=user)
         self.db.test_connection(throw_exception=True)
 
     if self.db is None:
@@ -200,11 +205,13 @@ class Assist(object):
         "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
       return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'TABLE_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
+      if 'TABLE_COMMENT' in str(e).upper():
+        LOG.warning('TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
         tables, description = query_and_fetch(self.db,
           "SELECT TABLE_NAME, NULL as TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
         return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
+      else:
+        LOG.error(f'Unable to get tables for "{database}":', exc_info=True)
 
   def get_columns(self, database, table):
     columns = self.get_columns_full(database, table)
@@ -217,13 +224,15 @@ class Assist(object):
           database, table))
       return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'COLUMN_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
+      if 'COLUMN_COMMENT' in str(e).upper():
+        LOG.warning('COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
         columns, description = query_and_fetch(self.db,
           "SELECT COLUMN_NAME, DATA_TYPE, NULL as COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS "
           "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (
             database, table))
         return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
+      else:
+        LOG.error(f'Unable to get columns for "{database}.{table}":', exc_info=True)
 
   def get_sample_data(self, database, table, column=None, nested=None):
     column = column or '*'

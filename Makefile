@@ -135,7 +135,7 @@ virtual-env: $(BLD_DIR_ENV)/stamp
 $(BLD_DIR_ENV)/stamp:
 	@echo "--- Creating virtual environment at $(BLD_DIR_ENV) using $(PYTHON_VER)"
 	@$(SYS_PYTHON) -m pip install --upgrade pip==$(PIP_VERSION)
-	$(SYS_PIP) install virtualenv==$(VIRTUAL_ENV_VERSION) virtualenv-make-relocatable==$(VIRTUAL_ENV_RELOCATABLE_VERSION)
+	$(SYS_PYTHON) -m pip install virtualenv==$(VIRTUAL_ENV_VERSION) virtualenv-make-relocatable==$(VIRTUAL_ENV_RELOCATABLE_VERSION)
 	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
 	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
 	 fi
