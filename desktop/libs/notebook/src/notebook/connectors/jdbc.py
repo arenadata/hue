@@ -57,6 +57,7 @@ class JdbcApi(Api):
 
     self.db = None
     self.options = interpreter['options']
+    self.row_limit = self.options.get('row_limit', 1000)
 
     if 'enable_auth_form' in self.options and self.options['enable_auth_form'] == 'False':
       self.options['password'] = ''
@@ -95,7 +96,7 @@ class JdbcApi(Api):
     if self.db is None:
       raise AuthenticationRequired()
 
-    data, description = query_and_fetch(self.db, snippet['statement'], 1000)
+    data, description = query_and_fetch(self.db, snippet['statement'], self.row_limit)
     has_result_set = data is not None
 
     return {
