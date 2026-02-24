@@ -20,6 +20,8 @@ import json
 import time
 import logging
 import posixpath
+import re
+import time
 
 from desktop.auth.backend import rewrite_user
 from desktop.lib.i18n import force_unicode
@@ -317,7 +319,7 @@ class FlinkSqlApi(Api):
     return response
 
   @query_error_handler
-  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=False, is_async=False,
+  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=None, is_async=False,
                       operation=None):
     if operation == 'hello':
       snippet['statement'] = "SELECT 'Hello World!'"
