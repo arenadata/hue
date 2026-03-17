@@ -20,6 +20,7 @@ from io import BytesIO as string_io
 
 from openpyxl import load_workbook
 
+from desktop.conf import CSV_EXPORT_DELIMITER
 from desktop.lib.export_csvxls import create_generator, make_response
 
 
@@ -78,6 +79,21 @@ def test_export_xls():
 
   assert expected_data == sheet_data
   assert 'attachment; filename="foo.xlsx"' == response["content-disposition"]
+
+
+def test_export_csv_with_custom_delimiter():
+  finish = CSV_EXPORT_DELIMITER.set_for_testing(';')
+  try:
+    headers = ["x", "y"]
+    data = [["1", "2"], ["3;4", "5"]]
+
+    generator = create_generator(content_generator(headers, data), "csv")
+    response = make_response(generator, "csv", "foo")
+
+    content = b''.join(response.streaming_content)
+    assert b'x;y\r\n1;2\r\n"3;4";5\r\n' == content
+  finally:
+    finish()
 
 
 def _read_xls_sheet_data(response):

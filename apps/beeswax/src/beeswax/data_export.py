@@ -75,8 +75,7 @@ def upload(path, handle, user, db, fs, max_rows=-1, max_bytes=-1):
 
   content_generator = DataAdapter(db, handle=handle, max_rows=max_rows, start_over=True, max_bytes=max_bytes)
   for header, data in content_generator:
-    dataset = export_csvxls.dataset(None, data)
-    fs.do_as_user(user.username, fs.append, path, dataset.csv)
+    fs.do_as_user(user.username, fs.append, path, export_csvxls.csv_dataset(None, data))
 
 
 class DataAdapter(object):

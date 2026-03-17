@@ -135,6 +135,15 @@ def coerce_zero_or_positive_integer(integer):
   return integer
 
 
+def coerce_csv_export_delimiter(delimiter):
+  delimiter = bytes(str(delimiter), 'utf-8').decode('unicode_escape')
+
+  if len(delimiter) != 1:
+    raise Exception('csv_export_delimiter must be a single character')
+
+  return delimiter
+
+
 def is_https_enabled():
   """Hue is configured for HTTPS."""
   return bool(SSL_CERTIFICATE.get() and SSL_PRIVATE_KEY.get())
@@ -1918,6 +1927,13 @@ ENABLE_DOWNLOAD = Config(
     'file in File Browser browsers...).'),
   type=coerce_bool,
   default=True)
+
+CSV_EXPORT_DELIMITER = Config(
+  key='csv_export_delimiter',
+  default=',',
+  type=coerce_csv_export_delimiter,
+  help=_('Delimiter used for CSV exports across Hue.')
+)
 
 ENABLE_SHARING = Config(
   key="enable_sharing",
