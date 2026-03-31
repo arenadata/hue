@@ -77,6 +77,7 @@ from django.utils.translation import gettext_lazy as _t
 from six import string_types
 
 from desktop.lib.paths import get_build_dir, get_desktop_root
+from desktop.lib.vault_client import resolve_vault_references
 
 try:
   from collections import OrderedDict
@@ -158,6 +159,18 @@ class BoundConfig(object):
   def get(self):
     """Get the data, or its default value."""
     data, present = self._get_data_and_presence()
+
+    # For secret fields, ensure we resolve vault references even during get()
+    if isinstance(data, str) and data.startswith('vault://'):
+      vault_conf_json = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
+      resolved_data = resolve_vault_references(data, vault_conf_json, self.prefix)
+      LOG.debug("Resolved value for %s", data)
+
+      if resolved_data is not None:
+        return self.config.get_value(resolved_data, present=True, prefix=self.prefix, coerce_type=True)
+      else:
+        LOG.error("Failed to resolve vault reference: %s", data)
+
     return self.config.get_value(data, present=present, prefix=self.prefix, coerce_type=True)
 
   def get_raw(self):
@@ -291,6 +304,17 @@ class Config(object):
     """
     if raw is None:
       return raw
+
+    # Resolve vault references for string values
+    if isinstance(raw, str) and raw.startswith('vault://'):
+        vault_conf = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
+        resolved = resolve_vault_references(raw, vault_conf, _)
+        LOG.debug("Resolved value for: %s", raw)
+        if resolved is not None:
+            raw = resolved
+        else:
+            LOG.error("Failed to resolve vault reference: %s", raw)
+
     return self.type(raw)
 
   def print_help(self, out=sys.stdout, indent=0):
