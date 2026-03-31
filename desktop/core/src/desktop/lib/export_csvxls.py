@@ -91,6 +91,15 @@ def dataset(headers, data, encoding=None):
   return dataset
 
 
+def csv_dataset(headers, data, encoding=None, delimiter=None):
+  if delimiter is None:
+    from desktop.conf import CSV_EXPORT_DELIMITER
+
+    delimiter = CSV_EXPORT_DELIMITER.get()
+
+  return dataset(headers, data, encoding).export('csv', delimiter=delimiter)
+
+
 class XlsWrapper(object):
   def __init__(self, xls):
     self.xls = xls
@@ -107,7 +116,7 @@ def create_generator(content_generator, format, encoding=None):
   if format == 'csv':
     show_headers = True
     for headers, data in content_generator:
-      yield dataset(show_headers and headers or None, data, encoding).csv
+      yield csv_dataset(show_headers and headers or None, data, encoding)
       show_headers = False
   elif format == 'xls':
     workbook = openpyxl.Workbook(write_only=True)
