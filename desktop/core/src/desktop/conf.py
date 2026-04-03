@@ -1427,6 +1427,10 @@ LDAP = ConfigSection(
           TEST_LDAP_GROUP=Config("test_ldap_group",
                             default=None,
                             help=_("The test group name to use for LDAP search.")),
+          LDAP_PAGE_SIZE=Config("ldap_page_size",
+                            default=1000,
+                            type=int,
+                            help=_("The page size to use for LDAP paged searches. Set to 0 to disable paging.")),
 
           DEBUG=Config("debug",
             type=coerce_bool,
@@ -1520,6 +1524,10 @@ LDAP = ConfigSection(
     TEST_LDAP_GROUP=Config("test_ldap_group",
                    default=None,
                    help=_("The test group name to use for LDAP search.")),
+    LDAP_PAGE_SIZE=Config("ldap_page_size",
+                   default=1000,
+                   type=int,
+                   help=_("The page size to use for LDAP paged searches. Set to 0 to disable paging.")),
 
     USERS=ConfigSection(
       key="users",
