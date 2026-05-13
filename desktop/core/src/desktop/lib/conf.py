@@ -77,7 +77,6 @@ from django.utils.translation import gettext_lazy as _t
 from six import string_types
 
 from desktop.lib.paths import get_build_dir, get_desktop_root
-from desktop.lib.vault_client import resolve_vault_references
 
 try:
   from collections import OrderedDict
@@ -307,6 +306,7 @@ class Config(object):
 
     # Resolve vault references for string values
     if isinstance(raw, str) and raw.startswith('vault://'):
+        from desktop.lib.vault_client import resolve_vault_references
         vault_conf = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
         resolved = resolve_vault_references(raw, vault_conf, _)
         LOG.debug("Resolved value for: %s", raw)

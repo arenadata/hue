@@ -16,17 +16,27 @@
 # limitations under the License.
 
 """
-
+Vault client for resolving vault:// references in configuration.
 """
 
 import logging
 import re
 import os
+import subprocess
 from typing import Optional, Any
 
-import hvac
-from hvac.exceptions import InvalidPath, Forbidden
-from hvac.api.auth_methods import Kubernetes
+try:
+    import hvac
+    from hvac.exceptions import InvalidPath, Forbidden
+    from hvac.api.auth_methods import Kubernetes
+    HAS_HVAC = True
+except ImportError:
+    HAS_HVAC = False
+    hvac = None
+    InvalidPath = Exception
+    Forbidden = Exception
+    Kubernetes = None
+
 from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -53,10 +63,14 @@ class VaultClient:
             config: VaultConfig instance with connection parameters
         """
         self.config = config
-        self._client: hvac.Client = None
+        self._client: Optional[Any] = None
         self._initialized = False
         self._token = None
         self._token_expiry = None
+
+        if not HAS_HVAC:
+            LOG.warning("hvac library is not installed. Vault integration is disabled.")
+            return
 
         self._init_client()
 
@@ -178,10 +192,10 @@ class VaultClient:
         try:
             if mount_point:
                 Kubernetes(client_.adapter).login(
-                    role=self.kubernetes_role, jwt=jwt, mount_point=self.auth_mount_point
+                    role=self.config.kubernetes_role, jwt=jwt, mount_point=self.config.auth_mount_point
                 )
             else:
-                Kubernetes(client_.adapter).login(role=self.kubernetes_role, jwt=jwt)
+                Kubernetes(client_.adapter).login(role=self.config.kubernetes_role, jwt=jwt)
             return client_.is_authenticated()
         except Exception as e:
             LOG.error("Kubernetes authentication failed: %s", e)
@@ -197,7 +211,8 @@ class VaultClient:
 
     def _get_password_from_script(self) -> Optional[str]:
         """Execute script to get password."""
-        if not os.path.exists(self.config.password_script):
+        script_path = self.config.password_script
+        if not script_path or not os.path.exists(script_path):
             return None
 
         try:
@@ -218,14 +233,15 @@ class VaultClient:
 
     def _get_token_from_file(self) -> Optional[str]:
         """Read token from file."""
-        if not os.path.exists(self.config.token_path):
+        token_path = self.config.token_path
+        if not token_path or not os.path.exists(token_path):
             return None
 
         try:
-            with open(self.config.token_path, 'r') as f:
+            with open(token_path, 'r') as f:
                 return f.read().strip()
         except Exception as e:
-            LOG.error("Failed to read token from %s: %s", path, e)
+            LOG.error("Failed to read token from %s: %s", token_path, e)
             return None
 
     def _get_kubernetes_jwt(self) -> Optional[str]:
@@ -391,7 +407,7 @@ def resolve_vault_references(value: str, vault_conf: dict, prefix: str = '') -> 
     Called from conf.py when processing configuration values.
 
     Args:
-        value: String possibly containing vault:// reference
+        value: String possibly containing vault reference
         vault_conf: Vault config map
         prefix: Config prefix for logging
 

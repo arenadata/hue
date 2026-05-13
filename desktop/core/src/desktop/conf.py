@@ -144,6 +144,42 @@ def coerce_csv_export_delimiter(delimiter):
   return delimiter
 
 
+def coerce_vault_verify(value):
+  """
+  Coerces Vault TLS verify parameter.
+  Supports boolean strings ('true', 'false', '1', '0', 'yes', 'no')
+  or a path to CA bundle.
+  """
+  if isinstance(value, bool):
+    return value
+
+  if isinstance(value, str):
+    upper = value.upper()
+    if upper in ('FALSE', '0', 'NO', 'OFF', 'NAY', ''):
+      return False
+    if upper in ('TRUE', '1', 'YES', 'ON', 'YEA'):
+      return True
+    return value
+
+  raise Exception('Could not coerce %r to Vault verify value' % (value,))
+
+
+def coerce_vault_cert(value):
+  """
+  Coerces Vault TLS cert parameter.
+  Supports tuple/list, comma-separated string, or single path string.
+  """
+  if isinstance(value, (list, tuple)):
+    return tuple(value)
+
+  if isinstance(value, str):
+    if ',' in value:
+      return tuple(part.strip() for part in value.split(','))
+    return value
+
+  raise Exception('Could not coerce %r to Vault cert value' % (value,))
+
+
 def is_https_enabled():
   """Hue is configured for HTTPS."""
   return bool(SSL_CERTIFICATE.get() and SSL_PRIVATE_KEY.get())
@@ -3040,12 +3076,14 @@ VAULT = ConfigSection(
     # SSL settings
     VERIFY_SSL=Config(
       key='verify',
+      type=coerce_vault_verify,
       help='Either a boolean to indicate whether TLS verification should be performed when sending requests to Vault, '
            'or a string pointing at the CA bundle to use for verification.'
     ),
     CERT=Config(
       key='cert',
       default=None,
+      type=coerce_vault_cert,
       help='Certificates for use in requests sent to the Vault instance. This should be a tuple with the '
            'certificate and then key.'
     ),

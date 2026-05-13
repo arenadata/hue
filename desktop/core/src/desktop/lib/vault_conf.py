@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass, field
 
 LOG = logging.getLogger()
@@ -36,8 +36,8 @@ class VaultConfig:
     kubernetes_jwt_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
     # SSL settings
-    verify: Optional[str] = None
-    cert: Optional[str] = None
+    verify: Optional[Union[bool, str]] = None
+    cert: Optional[Union[str, tuple]] = None
 
     # Timeout settings
     timeout: int = 30
@@ -86,7 +86,7 @@ class VaultConfig:
             if not self.kubernetes_role:
                 raise ValueError("kubernetes_role is required for Kubernetes authentication")
 
-        elif int(self.kv_engine_version) not in [1, 2]:
+        if int(self.kv_engine_version) not in [1, 2]:
             raise ValueError("kv_engine_version must be 1 or 2")
 
     def __repr__(self) -> str:
