@@ -147,27 +147,29 @@ def coerce_csv_export_delimiter(delimiter):
 def coerce_vault_verify(value):
   """
   Coerces Vault TLS verify parameter.
-  Supports boolean strings ('true', 'false', '1', '0', 'yes', 'no')
+  Supports boolean strings ('true', 'false')
   or a path to CA bundle.
+  https://docs.python-requests.org/en/latest/user/advanced/#ssl-cert-verification
   """
   if isinstance(value, bool):
     return value
-
   if isinstance(value, str):
-    upper = value.upper()
-    if upper in ('FALSE', '0', 'NO', 'OFF', 'NAY', ''):
-      return False
-    if upper in ('TRUE', '1', 'YES', 'ON', 'YEA'):
+    if value.lower() == "true":
       return True
+    elif value.lower() == "false":
+      return False
     return value
 
-  raise Exception('Could not coerce %r to Vault verify value' % (value,))
+  raise TypeError(
+    f"Vault verify must be bool, str (false/true) or str (path to CA bundle), got {type(value).__name__}: {value!r}"
+  )
 
 
 def coerce_vault_cert(value):
   """
   Coerces Vault TLS cert parameter.
   Supports tuple/list, comma-separated string, or single path string.
+  https://docs.python-requests.org/en/latest/user/advanced/#ssl-cert-verification
   """
   if isinstance(value, (list, tuple)):
     return tuple(value)
@@ -177,7 +179,9 @@ def coerce_vault_cert(value):
       return tuple(part.strip() for part in value.split(','))
     return value
 
-  raise Exception('Could not coerce %r to Vault cert value' % (value,))
+  raise TypeError(
+    f"Vault cert must be str, tuple, or list, got {type(value).__name__}: {value!r}"
+  )
 
 
 def is_https_enabled():
@@ -3076,6 +3080,7 @@ VAULT = ConfigSection(
     # SSL settings
     VERIFY_SSL=Config(
       key='verify',
+      default=False,
       type=coerce_vault_verify,
       help='Either a boolean to indicate whether TLS verification should be performed when sending requests to Vault, '
            'or a string pointing at the CA bundle to use for verification.'
