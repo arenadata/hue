@@ -3080,7 +3080,7 @@ VAULT = ConfigSection(
     # SSL settings
     VERIFY_SSL=Config(
       key='verify',
-      default=False,
+      default=True,
       type=coerce_vault_verify,
       help='Either a boolean to indicate whether TLS verification should be performed when sending requests to Vault, '
            'or a string pointing at the CA bundle to use for verification.'
