@@ -19,6 +19,8 @@
 Vault client for resolving vault:// references in configuration.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import os
@@ -211,19 +213,20 @@ class VaultClient:
 
     def _get_password_from_script(self) -> Optional[str]:
         """Execute script to get password."""
-        script_path = self.config.password_script
-        if not script_path or not os.path.exists(script_path):
+        script = self.config.password_script
+        if not script:
             return None
 
         try:
             result = subprocess.run(
-                [script_path],
+                script,
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             if result.returncode == 0:
-                return result.stdout.strip()
+                return result.stdout.strip('\n')
             else:
                 LOG.error("Password script failed: %s", result.stderr)
                 return None

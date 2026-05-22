@@ -161,6 +161,7 @@ class BoundConfig(object):
 
     # For secret fields, ensure we resolve vault references even during get()
     if isinstance(data, str) and data.startswith('vault://'):
+      from desktop.lib.vault_client import resolve_vault_references
       vault_conf_json = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
       resolved_data = resolve_vault_references(data, vault_conf_json, self.prefix)
       LOG.debug("Resolved value for %s", data)
