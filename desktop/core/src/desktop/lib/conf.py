@@ -162,14 +162,14 @@ class BoundConfig(object):
     # For secret fields, ensure we resolve vault references even during get()
     if isinstance(data, str) and data.startswith('vault://'):
       from desktop.lib.vault_client import resolve_vault_references
-      vault_conf_json = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
+      vault_conf_json = GLOBAL_CONFIG.get_data_dict().get("desktop", {}).get("vault", {})
       resolved_data = resolve_vault_references(data, vault_conf_json, self.prefix)
       LOG.debug("Resolved value for %s", data)
 
       if resolved_data is not None:
         return self.config.get_value(resolved_data, present=True, prefix=self.prefix, coerce_type=True)
       else:
-        LOG.error("Failed to resolve vault reference: %s", data)
+        raise ValueError("Failed to resolve vault reference: %s" % data)
 
     return self.config.get_value(data, present=present, prefix=self.prefix, coerce_type=True)
 
@@ -308,13 +308,14 @@ class Config(object):
     # Resolve vault references for string values
     if isinstance(raw, str) and raw.startswith('vault://'):
         from desktop.lib.vault_client import resolve_vault_references
-        vault_conf = GLOBAL_CONFIG.get_data_dict()["desktop"]["vault"]
-        resolved = resolve_vault_references(raw, vault_conf, _)
+        vault_conf = GLOBAL_CONFIG.get_data_dict().get("desktop", {}).get("vault", {})
+        resolved_data = resolve_vault_references(raw, vault_conf, _)
         LOG.debug("Resolved value for: %s", raw)
-        if resolved is not None:
-            raw = resolved
+
+        if resolved_data is not None:
+            raw = resolved_data
         else:
-            LOG.error("Failed to resolve vault reference: %s", raw)
+            raise ValueError("Failed to resolve vault reference: %s" % data)
 
     return self.type(raw)
 
