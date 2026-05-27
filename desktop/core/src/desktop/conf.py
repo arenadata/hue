@@ -144,6 +144,46 @@ def coerce_csv_export_delimiter(delimiter):
   return delimiter
 
 
+def coerce_vault_verify(value):
+  """
+  Coerces Vault TLS verify parameter.
+  Supports boolean strings ('true', 'false')
+  or a path to CA bundle.
+  https://docs.python-requests.org/en/latest/user/advanced/#ssl-cert-verification
+  """
+  if isinstance(value, bool):
+    return value
+  if isinstance(value, str):
+    if value.lower() == "true":
+      return True
+    elif value.lower() == "false":
+      return False
+    return value
+
+  raise TypeError(
+    f"Vault verify must be bool, str (false/true) or str (path to CA bundle), got {type(value).__name__}: {value!r}"
+  )
+
+
+def coerce_vault_cert(value):
+  """
+  Coerces Vault TLS cert parameter.
+  Supports tuple/list, comma-separated string, or single path string.
+  https://docs.python-requests.org/en/latest/user/advanced/#ssl-cert-verification
+  """
+  if isinstance(value, (list, tuple)):
+    return tuple(value)
+
+  if isinstance(value, str):
+    if ',' in value:
+      return tuple(part.strip() for part in value.split(','))
+    return value
+
+  raise TypeError(
+    f"Vault cert must be str, tuple, or list, got {type(value).__name__}: {value!r}"
+  )
+
+
 def is_https_enabled():
   """Hue is configured for HTTPS."""
   return bool(SSL_CERTIFICATE.get() and SSL_PRIVATE_KEY.get())
@@ -2944,6 +2984,131 @@ OZONE = UnspecifiedConfigSection(
   )
 )
 
+
+# Vault configuration section
+VAULT = ConfigSection(
+  key='vault',
+  help=_('Configuration options for HashiCorp Vault integration for secrets.'),
+  members=dict(
+
+    # Connection settings
+    URL=Config(
+      key='url',
+      default='http://127.0.0.1:8200',
+      help='Vault server URL',
+    ),
+    AUTH_TYPE=Config(
+      key='auth_type',
+      default='token',
+      type=str,
+      help='Authentication type: token, userpass, ldap, kubernetes'
+    ),
+    NAMESPACE=Config(
+      key='namespace',
+      type=str,
+      help='Namespace vault'
+    ),
+
+    # KV engine settings
+    MOUNT_POINT=Config(
+      key='mount_point',
+      default='secret',
+      help='Vault KV engine mount point'
+    ),
+    KV_ENGINE_VERSION=Config(
+      key='kv_engine_version',
+      default=2,
+      type=int,
+      help='Vault KV engine version (1 or 2)'
+    ),
+    KV_DEFAULT_KEY_SECRET=Config(
+      key='kv_default_key_secret',
+      default='value',
+      type=str,
+      help='Default key name for secret value retrieval'
+    ),
+
+    # Token authentication
+    TOKEN=Config(
+      key='token',
+      default=None,
+      type=str,
+      secret=True,
+      help='Vault authentication token'
+    ),
+    TOKEN_PATH=Config(
+      key='token_path',
+      type=str,
+      default=None,
+      help='Path to file containing Vault token'
+    ),
+
+    # Username/Password authentication (userpass, ldap)
+    USERNAME=Config(
+      key='username',
+      type=str,
+      default=None,
+      help='Username for userpass or LDAP authentication'
+    ),
+    PASSWORD=Config(
+      key='password',
+      type=str,
+      default=None,
+      secret=True,
+      help='Password for userpass or LDAP authentication'
+    ),
+    PASSWORD_SCRIPT=Config(
+      key='password_script',
+      type=str,
+      default=None,
+      secret=True,
+      help='Script to execute that returns password for userpass or LDAP authentication'
+    ),
+
+    # Kubernetes authentication
+    KUBERNETES_ROLE=Config(
+      key='kubernetes_role',
+      default=None,
+      help='Kubernetes role name for Kubernetes authentication'
+    ),
+    KUBERNETES_JWT_PATH=Config(
+      key='kubernetes_jwt_path',
+      default='/var/run/secrets/kubernetes.io/serviceaccount/token',
+      help='Path to Kubernetes service account JWT token'
+    ),
+
+    # SSL settings
+    VERIFY_SSL=Config(
+      key='verify',
+      default=False,
+      type=coerce_vault_verify,
+      help='Either a boolean to indicate whether TLS verification should be performed when sending requests to Vault, '
+           'or a string pointing at the CA bundle to use for verification.'
+    ),
+    CERT=Config(
+      key='cert',
+      default=None,
+      type=coerce_vault_cert,
+      help='Certificates for use in requests sent to the Vault instance. This should be a tuple with the '
+           'certificate and then key.'
+    ),
+
+    # Timeout settings
+    TIMEOUT=Config(
+      key='timeout',
+      default=30,
+      type=int,
+      help='Request timeout in seconds for Vault operations'
+    ),
+
+    # Auth mount point
+    AUTH_MOUNT_POINT=Config(
+      key='auth_mount_point',
+      default=None,
+      help='Custom mount point '
+    ),
+  )
+)
 
 def is_ofs_enabled():
   return ('default' in list(OZONE.keys()) and OZONE['default'].get_raw() and OZONE['default'].WEBHDFS_URL.get())
