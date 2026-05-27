@@ -226,7 +226,7 @@ class VaultClient:
                 timeout=30
             )
             if result.returncode == 0:
-                return result.stdout.strip()
+                return result.stdout.strip('\n')
             else:
                 LOG.error("Password script failed: %s", result.stderr)
                 return None
