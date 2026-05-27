@@ -395,16 +395,16 @@ class VaultSecretResolver:
 VAULT_RESOLVER = None
 
 
-def _get_resolver(vault_conf: dict) -> VaultSecretResolver:
+def _get_resolver(vault_conf) -> VaultSecretResolver:
     """Get or create global resolver."""
     global VAULT_RESOLVER
-    if VAULT_RESOLVER is None:
-        conf = get_vault_config(vault_conf)
+    conf = get_vault_config(vault_conf)
+    if VAULT_RESOLVER is None or VAULT_RESOLVER._config != conf:
         VAULT_RESOLVER = VaultSecretResolver(conf)
     return VAULT_RESOLVER
 
 
-def resolve_vault_references(value: str, vault_conf: dict, prefix: str = '') -> Optional[Any]:
+def resolve_vault_references(value: str, vault_conf, prefix: str = '') -> Optional[Any]:
     """
     Public function to resolve vault references.
     Called from conf.py when processing configuration values.
