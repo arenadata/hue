@@ -96,6 +96,7 @@
     useradmin_edituser: { url: '/useradmin/users/edit/:user', title: '${_('User Admin - Edit User')}' },
     useradmin_addldapgroups: { url: '/useradmin/users/add_ldap_groups', title: '${_('User Admin - Add LDAP Groups')}' },
     hbase: { url: '/hbase/', title: '${_('HBase Browser')}' },
+    zookeeper: { url: '/zookeeper/', title: '${_('ZooKeeper Browser')}' },
     security_hive: { url: '/security/hive', title: '${_('Security - Hive')}' },
     security_hdfs: { url: '/security/hdfs', title: '${_('Security - HDFS')}' },
     security_hive2: { url: '/security/hive2', title: '${_('Security - Hive')}' },
@@ -153,7 +154,7 @@
     'useradmin_permissions', 'useradmin_editpermission', 'useradmin_configurations', 'useradmin_newuser',
     'useradmin_addldapusers', 'useradmin_addldapgroups', 'useradmin_edituser', 'useradmin_organizations',
     'importer',
-    'security_hive', 'security_hdfs', 'security_hive2', 'security_solr', 'logs',
+    'security_hive', 'security_hdfs', 'security_hive2', 'security_solr', 'logs', 'zookeeper',
     % if hasattr(ENABLE_NEW_INDEXER, 'get') and ENABLE_NEW_INDEXER.get():
       'indexes',
     % endif

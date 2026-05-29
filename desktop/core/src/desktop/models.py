@@ -2129,6 +2129,15 @@ class ClusterConfig(object):
         'page': '/hbase/'
       })
 
+    if 'zookeeper' in self.apps:
+      interpreters.append({
+        'type': 'zookeeper',
+        'displayName': _('ZooKeeper'),
+        'buttonName': _('Browse'),
+        'tooltip': _('ZooKeeper'),
+        'page': '/zookeeper/'
+      })
+
     if 'security' in self.apps:
       interpreters.append({
         'type': 'security',
