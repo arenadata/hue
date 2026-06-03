@@ -58,6 +58,7 @@ class JdbcApi(Api):
     self.db = None
     self.options = interpreter['options']
     self.row_limit = self.options.get('row_limit', 1000)
+    self.java_home = self._resolve_java_home()
 
     if 'enable_auth_form' in self.options and self.options['enable_auth_form'] == 'False':
       self.options['password'] = ''
@@ -68,7 +69,20 @@ class JdbcApi(Api):
       username = self.user.username
       impersonation_property = self.options.get('impersonation_property')
       self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
-        impersonation_property=impersonation_property, impersonation_user=username)
+        impersonation_property=impersonation_property, impersonation_user=username, java_home=self.java_home)
+
+  def _resolve_java_home(self):
+    service = self.options.get('java_runtime_service')
+    if not service:
+      return None
+
+    from desktop.lib.runtime_utils import resolve_java_home
+    java_home = resolve_java_home(service=service)
+    if not java_home:
+      LOG.warning(
+        "Could not resolve JAVA_HOME for interpreter '%s' (java_runtime_service='%s'); using default java",
+        self.interpreter.get('name'), service)
+    return java_home
 
   def create_session(self, lang=None, properties=None):
     global API_CACHE
@@ -83,7 +97,8 @@ class JdbcApi(Api):
         props['properties'] = {'user': user}
         impersonation_property = self.options.get('impersonation_property')
         self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'),
-                                                   impersonation_property=impersonation_property, impersonation_user=user)
+                                                   impersonation_property=impersonation_property, impersonation_user=user,
+                                                   java_home=self.java_home)
         self.db.test_connection(throw_exception=True)
 
     if self.db is None:

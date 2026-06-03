@@ -166,6 +166,16 @@ def entry():
 
     # Set JAVA_HOME
     if "JAVA_HOME" not in list(os.environ.keys()):
+      try:
+        from desktop.lib.runtime_utils import resolve_java_home
+        ad_java_home = resolve_java_home()
+      except Exception as exc:
+        ad_java_home = None
+        print("ad-runtime-utils JAVA_HOME detection failed: %s" % exc)
+      if ad_java_home:
+        os.environ["JAVA_HOME"] = ad_java_home
+
+    if "JAVA_HOME" not in list(os.environ.keys()):
       if os.path.isfile('/usr/lib64/cmf/service/common/cloudera-config.sh'):
         locate_java = subprocess.Popen(
           ['bash', '-c', '. /usr/lib64/cmf/service/common/cloudera-config.sh; locate_java_home'], stdout=subprocess.PIPE,
