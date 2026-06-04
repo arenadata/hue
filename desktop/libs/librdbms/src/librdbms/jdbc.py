@@ -57,16 +57,26 @@ def query_and_fetch(db, statement, n=None):
 
 class Jdbc(object):
 
-  def __init__(self, driver_name, url, username, password, impersonation_property=None, impersonation_user=None):
+  def __init__(self, driver_name, url, username, password, impersonation_property=None, impersonation_user=None, java_home=None):
     if 'py4j' not in sys.modules:
       raise Exception('Required py4j module is not imported.')
 
-    os.environ["PATH"] = os.environ["PATH"] + ':/usr/java/default/bin' # TODO: more generic
+    java_path = None
+    if java_home:
+      candidate = os.path.join(java_home, 'bin', 'java')
+      if os.path.isfile(candidate):
+        java_path = candidate
+      else:
+        LOG.warning("Configured java_home '%s' has no bin/java; falling back to default java", java_home)
+
+    if java_path is None:
+      os.environ["PATH"] = os.environ["PATH"] + ':/usr/java/default/bin' # TODO: more generic
+
     classpath = os.environ.get('CLASSPATH', '')
     if DBPROXY_EXTRA_CLASSPATH.get():
       classpath = '%s:%s' % (DBPROXY_EXTRA_CLASSPATH.get(), classpath)
 
-    self.gateway = JavaGateway.launch_gateway(classpath=classpath, java_path=None)
+    self.gateway = JavaGateway.launch_gateway(classpath=classpath, java_path=java_path)
 
     self.jdbc_driver = driver_name
     self.db_url = url
