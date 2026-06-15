@@ -2952,8 +2952,13 @@ OZONE = UnspecifiedConfigSection(
       ),
       WEBHDFS_URL=Config(
           "webhdfs_url",
-          help="The URL to WebHDFS/HttpFS service. Defaults to the WebHDFS URL on the NameNode.",
-          type=str,
+          help=(
+              "Comma-separated list of OzoneFS/HttpFS URLs for HA failover. "
+              "Hue will transparently switch to the next URL on connection errors "
+              "(connection refused, timeout, HTTP 502/503/504). "
+              "A single URL is also valid and behaves as before."
+          ),
+          type=coerce_string,
           default=None
       ),
       SECURITY_ENABLED=Config(
