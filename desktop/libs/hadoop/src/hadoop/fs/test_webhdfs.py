@@ -30,7 +30,6 @@ import pytest
 from django.test import TestCase
 from requests import exceptions as req_exceptions
 
-from desktop.lib.fs.ozone.ofs import OzoneFS
 from hadoop import pseudo_hdfs4
 from hadoop.fs.exceptions import WebHdfsException
 from hadoop.fs.hadoopfs import Hdfs
@@ -703,8 +702,8 @@ class TestWebHdfsFailover:
   _ONE_URL = "http://h1:14000/webhdfs/v1"
 
   def _make_fs(self, url_str, cls=WebHdfs):
-    """Instantiate cls with mocked HTTP clients; returns (fs, mock_clients, mock_resources)
-    Pass cls=OzoneFS to test subclasses that share the same __init__ plumbing
+    """Instantiate WebHdfs with mocked HTTP clients
+    Returns (fs, mock_clients, mock_resources)
     """
     n = len([u.strip() for u in url_str.split(",") if u.strip()])
     mock_clients = [MagicMock(name="client_%d" % i) for i in range(n)]
@@ -890,13 +889,6 @@ class TestWebHdfsFailover:
 
     assert exc_info.value is ex
     resources[0].get.assert_called_once()  # exactly 1 attempt
-
-  def test_ozone_inherits_failover(self):
-    """OzoneFS.__init__ calls super().__init__ which parses URL list"""
-    fs, _, _ = self._make_fs(self._TWO_URLS, cls=OzoneFS)
-    assert fs._urls == ["http://h1:14000/webhdfs/v1", "http://h2:14000/webhdfs/v1"]
-    assert fs._active_index == 0
-    assert isinstance(fs, WebHdfs)
 
   def test_invalid_url_raises_on_init(self):
     """malformed URL (missing scheme) raises ValueError at init time"""

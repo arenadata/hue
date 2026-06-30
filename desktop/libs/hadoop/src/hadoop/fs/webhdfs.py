@@ -94,10 +94,18 @@ class FailoverResource(object):
     return self._call('invoke', *args, **kwargs)
 
   def _call(self, method_name, *args, **kwargs):
-    attempts = len(self._fs._urls)
-    for i in range(attempts):
+    n = len(self._fs._urls)
+    tried = set()  # indices already attempted by this thread in this call
+    last_ex = None
+    while len(tried) < n:
       # int read is atomic under the GIL — intentionally lock-free here
       idx = self._fs._active_index
+      if idx in tried:
+        # _active_index was wrapped back to an already-tried endpoint by a
+        # concurrent thread, nudge it forward and re-read
+        self._fs._switch_to_next_endpoint(idx)
+        continue
+      tried.add(idx)
       res = self._fs._resources[idx]
       try:
         result = getattr(res, method_name)(*args, **kwargs)
@@ -107,10 +115,12 @@ class FailoverResource(object):
         # Record before failover decision: a 307 is also raised here and
         # _invoke_with_redirect needs the client that produced it
         self._thread_local.last_client = self._fs._clients[idx]
-        if i < attempts - 1 and _is_failover_error(ex):
+        last_ex = ex
+        if len(tried) < n and _is_failover_error(ex):
           self._fs._switch_to_next_endpoint(idx)
           continue
         raise
+    raise last_ex  # safety net, all n endpoints exhausted
 
 
 class WebHdfs(Hdfs):
@@ -939,7 +949,7 @@ class WebHdfs(Hdfs):
     # redirect. In a multi-endpoint setup self._client may have already been
     # advanced to a different endpoint by a concurrent failover, so we read
     # the per-thread last_client recorded by FailoverResource._call instead of
-    # using self._client directly.Falls back to self._client when there is
+    # using self._client directly. Falls back to self._client when there is
     # only one endpoint (thread_local not yet populated)
     redirecting_client = getattr(self._root._thread_local, 'last_client', self._client)
     client._session = redirecting_client._session
