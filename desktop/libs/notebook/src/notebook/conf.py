@@ -44,6 +44,13 @@ def check_has_missing_permission(user, interpreter, user_apps=None):
   # TODO: port to cluster config
   if user_apps is None:
     user_apps = appmanager.get_apps_dict(user)  # Expensive method
+  if interpreter.startswith('kyuubi_'):
+    # per-engine granular check:kyuubi_<engine> requires kyuubi.access + kyuubi.access_<engine>
+    # naming convention:interpreter key 'kyuubi_spark3' -> action 'access_spark3'
+    if 'kyuubi' not in user_apps:
+      return True
+    engine_action = interpreter.replace('kyuubi_', 'access_', 1)
+    return not user.has_hue_permission(action=engine_action, app='kyuubi')
   return (
     (interpreter == 'hive' and 'hive' not in user_apps)
     or (interpreter == 'impala' and 'impala' not in user_apps)
@@ -51,6 +58,7 @@ def check_has_missing_permission(user, interpreter, user_apps=None):
     or (interpreter == 'solr' and 'search' not in user_apps)
     or (interpreter in ('spark', 'pyspark', 'r', 'jar', 'py', 'sparksql') and 'spark' not in user_apps)
     or (interpreter in ('java', 'spark2', 'mapreduce', 'shell', 'sqoop1', 'distcp') and 'oozie' not in user_apps)
+    or (interpreter == 'kyuubi' and 'kyuubi' not in user_apps)
   )
 
 

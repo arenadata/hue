@@ -27,7 +27,7 @@ from desktop.auth.backend import rewrite_user
 from desktop.conf import ENABLE_CONNECTORS
 from desktop.lib.connectors.api import _get_installed_connectors
 from desktop.lib.django_test_util import make_logged_in_client
-from notebook.conf import _excute_test_query, config_validator, get_ordered_interpreters
+from notebook.conf import _excute_test_query, check_has_missing_permission, config_validator, get_ordered_interpreters
 from useradmin.models import User, get_default_user_group, update_app_permissions
 
 
@@ -138,3 +138,31 @@ class TestCheckConfig():
     connector_id = 'hive'
 
     _excute_test_query(client=client, connector_id=connector_id)
+
+
+class TestCheckHasMissingPermissionKyuubi:
+
+  def test_kyuubi_hidden_without_app(self):
+    user = Mock()
+    assert check_has_missing_permission(user, 'kyuubi', user_apps={}) is True
+
+  def test_kyuubi_visible_with_app(self):
+    user = Mock()
+    assert check_has_missing_permission(user, 'kyuubi', user_apps={'kyuubi': object()}) is False
+
+  def test_engine_hidden_without_base_access(self):
+    user = Mock()
+    assert check_has_missing_permission(user, 'kyuubi_spark3', user_apps={}) is True
+    user.has_hue_permission.assert_not_called()
+
+  def test_engine_hidden_without_engine_permission(self):
+    user = Mock()
+    user.has_hue_permission.return_value = False
+    assert check_has_missing_permission(user, 'kyuubi_spark3', user_apps={'kyuubi': object()}) is True
+    user.has_hue_permission.assert_called_once_with(action='access_spark3', app='kyuubi')
+
+  def test_engine_visible_with_both_permissions(self):
+    user = Mock()
+    user.has_hue_permission.return_value = True
+    assert check_has_missing_permission(user, 'kyuubi_spark3', user_apps={'kyuubi': object()}) is False
+    user.has_hue_permission.assert_called_once_with(action='access_spark3', app='kyuubi')
