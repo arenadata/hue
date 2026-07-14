@@ -40,6 +40,10 @@ def _remove_duplications(a_list):
   return list(OrderedDict.fromkeys(a_list))
 
 
+def kyuubi_engine_to_action(interpreter_type):
+  return interpreter_type.replace('kyuubi_', 'access_', 1)
+
+
 def check_has_missing_permission(user, interpreter, user_apps=None):
   # TODO: port to cluster config
   if user_apps is None:
@@ -49,7 +53,7 @@ def check_has_missing_permission(user, interpreter, user_apps=None):
     # naming convention:interpreter key 'kyuubi_spark3' -> action 'access_spark3'
     if 'kyuubi' not in user_apps:
       return True
-    engine_action = interpreter.replace('kyuubi_', 'access_', 1)
+    engine_action = kyuubi_engine_to_action(interpreter)
     return not user.has_hue_permission(action=engine_action, app='kyuubi')
   return (
     (interpreter == 'hive' and 'hive' not in user_apps)

@@ -17,27 +17,28 @@
 
 from django.utils.translation import gettext as _
 
+from desktop.conf import has_connectors
 from desktop.lib.exceptions_renderable import PopupException
 from librdbms.jdbc import query_and_fetch
+from notebook.conf import kyuubi_engine_to_action
 from notebook.connectors.jdbc import Assist, JdbcApi
 
 
 class JdbcApiKyuubi(JdbcApi):
 
   def create_session(self, lang=None, properties=None):
-    if not self.user.has_hue_permission(action='access', app='kyuubi'):
-      raise PopupException(_('Missing permission to access the Kyuubi interpreter'), error_code=401)
-    interpreter_type = self.interpreter.get('type', '')
-    if interpreter_type.startswith('kyuubi_'):
-      # per-engine granular check: kyuubi_<engine> requires kyuubi.access_<engine>
-      # naming convention matches check_has_missing_permission in notebook/conf.py
-      engine_action = interpreter_type.replace('kyuubi_', 'access_', 1)
-      if not self.user.has_hue_permission(action=engine_action, app='kyuubi'):
-        engine_name = interpreter_type[len('kyuubi_'):]
-        raise PopupException(
-          _('Missing permission to access the Kyuubi %s engine') % engine_name,
-          error_code=401
-        )
+    if not has_connectors():
+      if not self.user.has_hue_permission(action='access', app='kyuubi'):
+        raise PopupException(_('Missing permission to access the Kyuubi interpreter'), error_code=401)
+      interpreter_type = self.interpreter.get('type', '')
+      if interpreter_type.startswith('kyuubi_'):
+        engine_action = kyuubi_engine_to_action(interpreter_type)
+        if not self.user.has_hue_permission(action=engine_action, app='kyuubi'):
+          engine_name = interpreter_type[len('kyuubi_'):]
+          raise PopupException(
+            _('Missing permission to access the Kyuubi %s engine') % engine_name,
+            error_code=401
+          )
     return super(JdbcApiKyuubi, self).create_session(lang, properties)
 
   def _createAssist(self, db):

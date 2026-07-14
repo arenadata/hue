@@ -23,6 +23,8 @@ from django.test import TestCase
 from desktop.lib.exceptions_renderable import PopupException
 from notebook.connectors.jdbc_kyuubi import JdbcApiKyuubi
 
+CONNECTOR_MODULE = 'notebook.connectors.jdbc_kyuubi.has_connectors'
+
 
 class TestJdbcApiKyuubi(TestCase):
 
@@ -66,3 +68,15 @@ class TestJdbcApiKyuubi(TestCase):
       result = api.create_session()
 
     assert result == {'id': 'ok'}
+
+  def test_create_session_skips_permission_check_in_connector_mode(self):
+    # in connector mode has_connectors()=True, access is controlled at connector-discovery level
+    # create_session must not raise even when the user has no kyuubi HuePermission
+    api = self._make_api(perms=set(), interpreter_type='kyuubi_spark3')
+
+    with patch(CONNECTOR_MODULE, return_value=True), \
+         patch('notebook.connectors.jdbc.JdbcApi.create_session', return_value={'id': 'ok'}) as parent_mock:
+      result = api.create_session()
+
+    assert result == {'id': 'ok'}
+    parent_mock.assert_called_once()
