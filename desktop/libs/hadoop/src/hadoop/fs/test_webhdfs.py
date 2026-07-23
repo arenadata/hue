@@ -19,17 +19,21 @@
 import os
 import sys
 import random
+import socket
 import logging
 import threading
 from builtins import map, object, range, zip
 from functools import reduce
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import TestCase
+from requests import exceptions as req_exceptions
 
 from hadoop import pseudo_hdfs4
 from hadoop.fs.exceptions import WebHdfsException
 from hadoop.fs.hadoopfs import Hdfs
+from hadoop.fs.webhdfs import FAILOVER_HTTP_CODES, WebHdfs, _is_failover_error
 from hadoop.pseudo_hdfs4 import is_live_cluster
 
 LOG = logging.getLogger()
@@ -38,18 +42,17 @@ LOG = logging.getLogger()
 @pytest.mark.requires_hadoop
 @pytest.mark.integration
 class WebhdfsTests(TestCase):
-
   @classmethod
   def setup_class(cls):
     cls.cluster = pseudo_hdfs4.shared_cluster()
-    cls.prefix = cls.cluster.fs_prefix + '/WebhdfsTests'
+    cls.prefix = cls.cluster.fs_prefix + "/WebhdfsTests"
 
-    cls.cluster.fs.setuser('test')
+    cls.cluster.fs.setuser("test")
     cls.cluster.fs.mkdir(cls.prefix)
     cls.cluster.fs.chmod(cls.prefix, 0o1777)
 
   def setup_method(self, method):
-    self.cluster.fs.setuser('test')
+    self.cluster.fs.setuser("test")
 
   def test_webhdfs(self):
     """
@@ -106,7 +109,7 @@ class WebhdfsTests(TestCase):
   def test_seek_across_blocks(self):
     """Makes a file with a lot of blocks, seeks around"""
     if is_live_cluster():
-      raise SkipTest('HUE-2946: Skipping because requires more memory')
+      raise SkipTest("HUE-2946: Skipping because requires more memory")
 
     fs = self.cluster.fs
     test_file = self.prefix + "/fortest-blocks.txt"
@@ -123,8 +126,8 @@ class WebhdfsTests(TestCase):
         for j in range(1, 100):
           offset = random.randint(0, len(data) - 1)
           f.seek(offset, os.SEEK_SET)
-          t = data[offset:offset + 50]
-          t = t.encode('utf-8')
+          t = data[offset : offset + 50]
+          t = t.encode("utf-8")
 
           assert t == f.read(50)
         f.close()
@@ -151,84 +154,84 @@ class WebhdfsTests(TestCase):
   def test_umask(self):
     fs = self.cluster.fs
 
-    prefix = self.prefix + '/test_umask'
+    prefix = self.prefix + "/test_umask"
     fs_umask = fs._umask
     fs._umask = 0o1022
 
     try:
-      test_dir = prefix + '/umask_test_dir'
+      test_dir = prefix + "/umask_test_dir"
       fs.mkdir(test_dir)
 
-      test_file = prefix + '/umask_test.txt'
+      test_file = prefix + "/umask_test.txt"
       f = fs.open(test_file, "w")
       f.write("foo")
       f.close()
 
       # Check currrent permissions are 777 (666 for file)
-      assert '40755' == '%o' % fs.stats(test_dir).mode
-      assert '100644' == '%o' % fs.stats(test_file).mode
+      assert "40755" == "%o" % fs.stats(test_dir).mode
+      assert "100644" == "%o" % fs.stats(test_file).mode
     finally:
       fs._umask = fs_umask
 
     fs_umask = fs._umask
     fs._umask = 0o077
-    prefix += '/2'
+    prefix += "/2"
 
     try:
-      test_dir = prefix + '/umask_test_dir'
+      test_dir = prefix + "/umask_test_dir"
       fs.mkdir(test_dir)
 
-      test_file = prefix + '/umask_test.txt'
+      test_file = prefix + "/umask_test.txt"
       fs.create(test_file)
 
       # Check currrent permissions are not 777 (666 for file)
-      assert '41700' == '%o' % fs.stats(test_dir).mode
-      assert '100600' == '%o' % fs.stats(test_file).mode
+      assert "41700" == "%o" % fs.stats(test_dir).mode
+      assert "100600" == "%o" % fs.stats(test_file).mode
     finally:
       fs._umask = fs_umask
 
   def test_umask_overriden(self):
     fs = self.cluster.fs
 
-    prefix = self.prefix + '/test_umask_overriden'
+    prefix = self.prefix + "/test_umask_overriden"
     fs_umask = fs._umask
     fs._umask = 0o1022
 
     try:
-      test_dir = prefix + '/umask_test_dir'
+      test_dir = prefix + "/umask_test_dir"
       fs.mkdir(test_dir, 0o333)
 
-      test_file = prefix + '/umask_test.txt'
+      test_file = prefix + "/umask_test.txt"
       fs.create(test_file, permission=0o333)
 
-      assert '40333' == '%o' % fs.stats(test_dir).mode
-      assert '100333' == '%o' % fs.stats(test_file).mode
+      assert "40333" == "%o" % fs.stats(test_dir).mode
+      assert "100333" == "%o" % fs.stats(test_file).mode
     finally:
       fs._umask = fs_umask
 
   def test_umask_without_sticky(self):
     fs = self.cluster.fs
 
-    prefix = self.prefix + '/test_umask_without_sticky'
+    prefix = self.prefix + "/test_umask_without_sticky"
     fs_umask = fs._umask
     fs._umask = 0o22
 
     try:
-      test_dir = prefix + '/umask_test_dir'
+      test_dir = prefix + "/umask_test_dir"
       fs.mkdir(test_dir)
 
-      test_file = prefix + '/umask_test.txt'
+      test_file = prefix + "/umask_test.txt"
       fs.create(test_file)
 
-      assert '41755' == '%o' % fs.stats(test_dir).mode
-      assert '100644' == '%o' % fs.stats(test_file).mode
+      assert "41755" == "%o" % fs.stats(test_dir).mode
+      assert "100644" == "%o" % fs.stats(test_file).mode
     finally:
       fs._umask = fs_umask
 
   def test_copy_remote_dir(self):
     fs = self.cluster.fs
 
-    src_dir = self.prefix + '/copy_remote_dir'
+    src_dir = self.prefix + "/copy_remote_dir"
     fs.mkdir(src_dir)
     f1 = fs.open(src_dir + "/test_one.txt", "w")
     f1.write("foo")
@@ -237,15 +240,15 @@ class WebhdfsTests(TestCase):
     f2.write("bar")
     f2.close()
 
-    new_owner = 'testcopy'
-    new_owner_dir = self.prefix + '/' + new_owner + '/test-copy'
+    new_owner = "testcopy"
+    new_owner_dir = self.prefix + "/" + new_owner + "/test-copy"
 
     fs.copy_remote_dir(src_dir, new_owner_dir, dir_mode=0o755, owner=new_owner)
 
     dir_stat = fs.stats(new_owner_dir)
     assert new_owner == dir_stat.user
     # assert_equals(new_owner, dir_stat.group) We inherit supergroup now
-    assert '40755' == '%o' % dir_stat.mode
+    assert "40755" == "%o" % dir_stat.mode
 
     src_stat = fs.listdir_stats(src_dir)
     dest_stat = fs.listdir_stats(new_owner_dir)
@@ -256,9 +259,9 @@ class WebhdfsTests(TestCase):
     assert src_names == dest_names
 
     for stat in dest_stat:
-      assert 'testcopy' == stat.user
+      assert "testcopy" == stat.user
       # assert_equals('testcopy', stat.group) We inherit supergroup now
-      assert '100644' == '%o' % stat.mode
+      assert "100644" == "%o" % stat.mode
 
   def test_two_files_open(self):
     """
@@ -277,18 +280,18 @@ class WebhdfsTests(TestCase):
 
   def test_urlsplit(self):
     """Test Hdfs urlsplit"""
-    url = 'hdfs://nn.no.port/foo/bar'
-    assert ('hdfs', 'nn.no.port', '/foo/bar', '', '') == Hdfs.urlsplit(url)
-    url = 'hdfs://nn:8020/foo/bar'
-    assert ('hdfs', 'nn:8020', '/foo/bar', '', '') == Hdfs.urlsplit(url)
-    url = 'hdfs://nn:8020//foo//bar'
-    assert ('hdfs', 'nn:8020', '/foo/bar', '', '') == Hdfs.urlsplit(url)
-    url = 'hdfs://nn:8020'
-    assert ('hdfs', 'nn:8020', '/', '', '') == Hdfs.urlsplit(url)
-    url = '/foo/bar'
-    assert ('hdfs', '', '/foo/bar', '', '') == Hdfs.urlsplit(url)
-    url = 'foo//bar'
-    assert ('hdfs', '', 'foo/bar', '', '') == Hdfs.urlsplit(url)
+    url = "hdfs://nn.no.port/foo/bar"
+    assert ("hdfs", "nn.no.port", "/foo/bar", "", "") == Hdfs.urlsplit(url)
+    url = "hdfs://nn:8020/foo/bar"
+    assert ("hdfs", "nn:8020", "/foo/bar", "", "") == Hdfs.urlsplit(url)
+    url = "hdfs://nn:8020//foo//bar"
+    assert ("hdfs", "nn:8020", "/foo/bar", "", "") == Hdfs.urlsplit(url)
+    url = "hdfs://nn:8020"
+    assert ("hdfs", "nn:8020", "/", "", "") == Hdfs.urlsplit(url)
+    url = "/foo/bar"
+    assert ("hdfs", "", "/foo/bar", "", "") == Hdfs.urlsplit(url)
+    url = "foo//bar"
+    assert ("hdfs", "", "foo/bar", "", "") == Hdfs.urlsplit(url)
 
   def test_i18n_namespace(self):
     if sys.version_info[0] > 2:
@@ -296,7 +299,7 @@ class WebhdfsTests(TestCase):
     else:
       # Use utf-8 encoding
       reload(sys)
-      sys.setdefaultencoding('utf-8')
+      sys.setdefaultencoding("utf-8")
 
     def check_existence(name, parent, present=True):
       listing = self.cluster.fs.listdir(parent)
@@ -305,10 +308,10 @@ class WebhdfsTests(TestCase):
       else:
         assert name not in listing, f"{name} should not be in {listing}"
 
-    name = u'''pt-Olá_ch-你好_ko-안녕_ru-Здравствуйте%20,.<>~`!@$%^&()_-+='"'''
-    prefix = self.prefix + '/tmp/i18n'
-    dir_path = '%s/%s' % (prefix, name)
-    file_path = '%s/%s' % (dir_path, name)
+    name = '''pt-Olá_ch-你好_ko-안녕_ru-Здравствуйте%20,.<>~`!@$%^&()_-+='"'''
+    prefix = self.prefix + "/tmp/i18n"
+    dir_path = "%s/%s" % (prefix, name)
+    file_path = "%s/%s" % (dir_path, name)
 
     try:
       # Create a directory
@@ -317,19 +320,19 @@ class WebhdfsTests(TestCase):
       check_existence(name, prefix)
 
       # Create a file (same name) in the directory
-      self.cluster.fs.open(file_path, 'w').close()
+      self.cluster.fs.open(file_path, "w").close()
       # File is there
       check_existence(name, dir_path)
 
       # Test rename
-      new_file_path = file_path + '.new'
+      new_file_path = file_path + ".new"
       self.cluster.fs.rename(file_path, new_file_path)
       # New file is there
-      check_existence(name + '.new', dir_path)
+      check_existence(name + ".new", dir_path)
 
       # Test remove
       self.cluster.fs.remove(new_file_path)
-      check_existence(name + '.new', dir_path, present=False)
+      check_existence(name + ".new", dir_path, present=False)
 
       # Test rmtree
       self.cluster.fs.rmtree(dir_path)
@@ -339,26 +342,26 @@ class WebhdfsTests(TestCase):
       try:
         self.cluster.fs.rmtree(dir_path)
       except IOError as ex:
-        LOG.info('Successfully caught error: %s' % ex)
+        LOG.info("Successfully caught error: %s" % ex)
     finally:
       try:
         self.cluster.fs.rmtree(prefix)
       except Exception as ex:
-        LOG.error('Failed to cleanup %s: %s' % (prefix, ex))
+        LOG.error("Failed to cleanup %s: %s" % (prefix, ex))
 
       if sys.version_info[0] > 2:
         pass
       else:
         # Reset encoding
         reload(sys)
-        sys.setdefaultencoding('ascii')
+        sys.setdefaultencoding("ascii")
 
   def test_chmod(self):
     # Create a test directory with
     # a subdirectory and a few files.
-    dir1 = self.prefix + '/test_chmod'
-    subdir1 = dir1 + '/test1'
-    file1 = subdir1 + '/test1.txt'
+    dir1 = self.prefix + "/test_chmod"
+    subdir1 = dir1 + "/test1"
+    file1 = subdir1 + "/test1.txt"
     fs = self.cluster.fs
 
     try:
@@ -387,14 +390,14 @@ class WebhdfsTests(TestCase):
       assert 0o101444 == fs.stats(file1).mode
     finally:
       fs.rmtree(dir1, skip_trash=True)
-      fs.setuser('test')
+      fs.setuser("test")
 
   def test_chown(self):
     # Create a test directory with
     # a subdirectory and a few files.
-    dir1 = self.prefix + '/test_chown'
-    subdir1 = dir1 + '/test1'
-    file1 = subdir1 + '/test1.txt'
+    dir1 = self.prefix + "/test_chown"
+    subdir1 = dir1 + "/test1"
+    file1 = subdir1 + "/test1.txt"
     fs = self.cluster.fs
 
     try:
@@ -406,35 +409,35 @@ class WebhdfsTests(TestCase):
 
       # Check currrent owners are not user test
       LOG.info(str(fs.stats(dir1).__dict__))
-      assert_not_equals('test', fs.stats(dir1).user)
-      assert_not_equals('test', fs.stats(subdir1).user)
-      assert_not_equals('test', fs.stats(file1).user)
+      assert_not_equals("test", fs.stats(dir1).user)
+      assert_not_equals("test", fs.stats(subdir1).user)
+      assert_not_equals("test", fs.stats(file1).user)
 
       # Chown non-recursive
-      fs.chown(dir1, 'test', recursive=False)
-      assert 'test' == fs.stats(dir1).user
-      assert_not_equals('test', fs.stats(subdir1).user)
-      assert_not_equals('test', fs.stats(file1).user)
+      fs.chown(dir1, "test", recursive=False)
+      assert "test" == fs.stats(dir1).user
+      assert_not_equals("test", fs.stats(subdir1).user)
+      assert_not_equals("test", fs.stats(file1).user)
 
       # Chown recursive
-      fs.chown(dir1, 'test', recursive=True)
-      assert 'test' == fs.stats(dir1).user
-      assert 'test' == fs.stats(subdir1).user
-      assert 'test' == fs.stats(file1).user
+      fs.chown(dir1, "test", recursive=True)
+      assert "test" == fs.stats(dir1).user
+      assert "test" == fs.stats(subdir1).user
+      assert "test" == fs.stats(file1).user
     finally:
       fs.rmtree(dir1, skip_trash=True)
-      fs.setuser('test')
+      fs.setuser("test")
 
   def test_trash_and_restore(self):
-    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), 'trash_test')
+    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), "trash_test")
 
     try:
       # Trash
-      self.cluster.fs.open(PATH, 'w').close()
+      self.cluster.fs.open(PATH, "w").close()
       assert self.cluster.fs.exists(PATH)
       self.cluster.fs.remove(PATH)
       assert not self.cluster.fs.exists(PATH)
-      assert self.cluster.fs.join(self.cluster.fs.get_home_dir(), '.Trash') == self.cluster.fs.trash_path()
+      assert self.cluster.fs.join(self.cluster.fs.get_home_dir(), ".Trash") == self.cluster.fs.trash_path()
       assert self.cluster.fs.exists(self.cluster.fs.trash_path(PATH))
       trash_dirs = self.cluster.fs.listdir(self.cluster.fs.trash_path(PATH))
       trash_paths = [self.cluster.fs.join(self.cluster.fs.trash_path(PATH), trash_dir, PATH[1:]) for trash_dir in trash_dirs]
@@ -450,14 +453,14 @@ class WebhdfsTests(TestCase):
       try:
         self.cluster.fs.rmtree(PATH)
       except Exception as ex:
-        LOG.error('Failed to cleanup %s: %s' % (PATH, ex))
+        LOG.error("Failed to cleanup %s: %s" % (PATH, ex))
 
   def test_trash_and_purge(self):
-    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), 'trash_test')
+    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), "trash_test")
 
     try:
       # Trash
-      self.cluster.fs.open(PATH, 'w').close()
+      self.cluster.fs.open(PATH, "w").close()
       assert self.cluster.fs.exists(PATH)
       self.cluster.fs.remove(PATH)
       assert not self.cluster.fs.exists(PATH)
@@ -476,14 +479,14 @@ class WebhdfsTests(TestCase):
       try:
         self.cluster.fs.rmtree(PATH)
       except Exception as ex:
-        LOG.error('Failed to cleanup %s: %s' % (PATH, ex))
+        LOG.error("Failed to cleanup %s: %s" % (PATH, ex))
 
   def test_restore_error(self):
-    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), 'trash_test')
+    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), "trash_test")
 
     try:
       # Trash
-      self.cluster.fs.open(PATH, 'w').close()
+      self.cluster.fs.open(PATH, "w").close()
       assert self.cluster.fs.exists(PATH)
       self.cluster.fs.remove(PATH)
       assert not self.cluster.fs.exists(PATH)
@@ -506,14 +509,14 @@ class WebhdfsTests(TestCase):
       try:
         self.cluster.fs.rmtree(PATH)
       except Exception as ex:
-        LOG.error('Failed to cleanup %s: %s' % (PATH, ex))
+        LOG.error("Failed to cleanup %s: %s" % (PATH, ex))
 
   def test_trash_permissions(self):
-    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), 'trash_test')
+    PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), "trash_test")
 
     try:
       # Trash
-      self.cluster.fs.open(PATH, 'w').close()
+      self.cluster.fs.open(PATH, "w").close()
       assert self.cluster.fs.exists(PATH)
       self.cluster.fs.remove(PATH)
       assert not self.cluster.fs.exists(PATH)
@@ -526,17 +529,18 @@ class WebhdfsTests(TestCase):
 
       # Restore
       with pytest.raises(IOError):
-        self.cluster.fs.do_as_user('nouser', self.cluster.fs.restore, trash_path)
+        self.cluster.fs.do_as_user("nouser", self.cluster.fs.restore, trash_path)
     finally:
       try:
         self.cluster.fs.rmtree(PATH)
       except Exception as ex:
-        LOG.error('Failed to cleanup %s: %s' % (PATH, ex))
+        LOG.error("Failed to cleanup %s: %s" % (PATH, ex))
 
   def test_trash_users(self):
     """
     Imitate eventlet green thread re-use and ensure trash works.
     """
+
     class test_local(object):
       def __getattribute__(self, name):
         return object.__getattribute__(self, name)
@@ -549,7 +553,7 @@ class WebhdfsTests(TestCase):
 
     threading.local = test_local
 
-    USERS = ['test1', 'test2']
+    USERS = ["test1", "test2"]
     CLEANUP = []
 
     try:
@@ -561,8 +565,8 @@ class WebhdfsTests(TestCase):
 
         # Move to trash for both users.
         # If there is a thread local issue, then this will fail.
-        PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), 'trash_test')
-        self.cluster.fs.open(PATH, 'w').close()
+        PATH = self.cluster.fs.join(self.cluster.fs.get_home_dir(), "trash_test")
+        self.cluster.fs.open(PATH, "w").close()
         assert self.cluster.fs.exists(PATH)
         self.cluster.fs.remove(PATH)
         assert not self.cluster.fs.exists(PATH)
@@ -577,21 +581,21 @@ class WebhdfsTests(TestCase):
         try:
           self.cluster.fs.rmtree(dir)
         except Exception as ex:
-          LOG.error('Failed to cleanup %s: %s' % (directory, ex))
+          LOG.error("Failed to cleanup %s: %s" % (directory, ex))
 
   def test_check_access(self):
     # Set user to owner
-    self.cluster.fs.setuser('test')
-    assert ((b'') == self.cluster.fs.check_access(path='/user/test', aclspec='rw-'))  # returns zero-length content
+    self.cluster.fs.setuser("test")
+    assert (b"") == self.cluster.fs.check_access(path="/user/test", aclspec="rw-")  # returns zero-length content
 
     # Set user to superuser
     self.cluster.fs.setuser(self.cluster.superuser)
-    assert ((b'') == self.cluster.fs.check_access(path='/user/test', aclspec='rw-'))  # returns zero-length content
+    assert (b"") == self.cluster.fs.check_access(path="/user/test", aclspec="rw-")  # returns zero-length content
 
     # Set user to non-authorized, non-superuser user
-    self.cluster.fs.setuser('nonadmin')
+    self.cluster.fs.setuser("nonadmin")
     with pytest.raises(WebHdfsException):
-      self.cluster.fs.check_access(path='/user/test', aclspec='rw-')
+      self.cluster.fs.check_access(path="/user/test", aclspec="rw-")
 
   def test_list(self):
     test_file = self.prefix + "/fortest.txt"
@@ -616,3 +620,293 @@ class WebhdfsTests(TestCase):
     LOG.debug("%s" % resp)
     self.cluster.fs.remove(test_file)
     self.cluster.fs.remove(test_file2)
+
+
+# Unit tests for HA failover logic- no real Hadoop cluster required
+
+
+def _make_webhdfs_ex(status_code=None, parent_exc=None):
+  """Build a WebHdfsException for use in tests
+
+  Pass status_code for HTTP-level errors (e.g. 503, 404, 307)
+  Pass parent_exc for network-level errors (ConnectionError, Timeout, etc.)
+  """
+  if parent_exc is not None:
+    return WebHdfsException(parent_exc)
+  mock_error = MagicMock()
+  mock_error.response.status_code = status_code
+  mock_error.response.text = ""
+  return WebHdfsException(mock_error)
+
+
+class TestIsFailoverError:
+  """Unit tests for _is_failover_error"""
+
+  def test_503_triggers_failover(self):
+    ex = _make_webhdfs_ex(status_code=503)
+    assert _is_failover_error(ex) is True
+
+  def test_502_triggers_failover(self):
+    ex = _make_webhdfs_ex(status_code=502)
+    assert _is_failover_error(ex) is True
+
+  def test_504_triggers_failover(self):
+    ex = _make_webhdfs_ex(status_code=504)
+    assert _is_failover_error(ex) is True
+
+  def test_connection_error_triggers_failover(self):
+    ex = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("Connection refused"))
+    assert _is_failover_error(ex) is True
+
+  def test_timeout_triggers_failover(self):
+    ex = _make_webhdfs_ex(parent_exc=req_exceptions.Timeout("Read timed out"))
+    assert _is_failover_error(ex) is True
+
+  def test_dns_error_triggers_failover(self):
+    """socket.gaierror is wrapped by requests inside ConnectionError"""
+    dns_err = req_exceptions.ConnectionError(socket.gaierror("Name or service not known"))
+    ex = _make_webhdfs_ex(parent_exc=dns_err)
+    assert _is_failover_error(ex) is True
+
+  def test_404_does_not_trigger_failover(self):
+    ex = _make_webhdfs_ex(status_code=404)
+    assert _is_failover_error(ex) is False
+
+  def test_403_does_not_trigger_failover(self):
+    ex = _make_webhdfs_ex(status_code=403)
+    assert _is_failover_error(ex) is False
+
+  def test_400_does_not_trigger_failover(self):
+    ex = _make_webhdfs_ex(status_code=400)
+    assert _is_failover_error(ex) is False
+
+  def test_307_does_not_trigger_failover(self):
+    ex = _make_webhdfs_ex(status_code=307)
+    assert _is_failover_error(ex) is False
+
+  def test_500_does_not_trigger_failover(self):
+    """Generic 500 is not a connectivity failure"""
+    ex = _make_webhdfs_ex(status_code=500)
+    assert _is_failover_error(ex) is False
+
+  def test_all_failover_http_codes_covered(self):
+    for code in FAILOVER_HTTP_CODES:
+      ex = _make_webhdfs_ex(status_code=code)
+      assert _is_failover_error(ex) is True, "Expected failover for HTTP %d" % code
+
+
+class TestWebHdfsFailover:
+  """Unit tests for HA failover behaviour in WebHdfs"""
+
+  _TWO_URLS = "http://h1:14000/webhdfs/v1,http://h2:14000/webhdfs/v1"
+  _ONE_URL = "http://h1:14000/webhdfs/v1"
+
+  def _make_fs(self, url_str, cls=WebHdfs):
+    """Instantiate WebHdfs with mocked HTTP clients
+    Returns (fs, mock_clients, mock_resources)
+    """
+    n = len([u.strip() for u in url_str.split(",") if u.strip()])
+    mock_clients = [MagicMock(name="client_%d" % i) for i in range(n)]
+
+    with patch.object(WebHdfs, "_make_client", side_effect=list(mock_clients)), patch("hadoop.fs.webhdfs.resource.Resource"):
+      fs = cls(url=url_str, fs_defaultfs="hdfs://namenode:8020")
+
+    # Replace fs._resources with fresh independent mocks so each test
+    # can configure .get / .put / .invoke side_effect cleanly
+    mock_resources = [MagicMock(name="resource_%d" % i) for i in range(n)]
+    fs._resources = mock_resources
+    fs._clients = mock_clients
+    return fs, mock_clients, mock_resources
+
+  def test_url_parsing_two_urls(self):
+    """comma-separated URL is split into list; first URL is active"""
+    fs, _, _ = self._make_fs(self._TWO_URLS)
+    assert fs._urls == ["http://h1:14000/webhdfs/v1", "http://h2:14000/webhdfs/v1"]
+    assert len(fs._urls) == 2
+    assert fs._active_index == 0
+    assert fs._url == "http://h1:14000/webhdfs/v1"
+
+  def test_url_parsing_strips_whitespace(self):
+    """spaces around commas are stripped."""
+    fs, _, _ = self._make_fs("http://h1:14000/webhdfs/v1 , http://h2:14000/webhdfs/v1")
+    assert fs._urls == ["http://h1:14000/webhdfs/v1", "http://h2:14000/webhdfs/v1"]
+
+  def test_failover_on_connection_error(self):
+    """ConnectionError on first endpoint - retry on second -success"""
+    fs, clients, resources = self._make_fs(self._TWO_URLS)
+    conn_err = req_exceptions.ConnectionError("Connection refused")
+    resources[0].get.side_effect = _make_webhdfs_ex(parent_exc=conn_err)
+    resources[1].get.return_value = {"FileStatus": {}}
+
+    result = fs._root.get("/some/path")
+
+    assert result == {"FileStatus": {}}
+    assert fs._active_index == 1
+
+  def test_failover_on_503(self):
+    """HTTP 503 on first endpoint - failover to second"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    resources[0].get.side_effect = _make_webhdfs_ex(status_code=503)
+    resources[1].get.return_value = {"FileStatus": {}}
+
+    result = fs._root.get("/path")
+
+    assert result == {"FileStatus": {}}
+    assert fs._active_index == 1
+
+  def test_failover_on_502(self):
+    """HTTP 502 also triggers failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    resources[0].get.side_effect = _make_webhdfs_ex(status_code=502)
+    resources[1].get.return_value = "ok"
+
+    assert fs._root.get("/path") == "ok"
+    assert fs._active_index == 1
+
+  def test_failover_on_timeout(self):
+    """requests.Timeout triggers failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    resources[0].get.side_effect = _make_webhdfs_ex(parent_exc=req_exceptions.Timeout("timed out"))
+    resources[1].get.return_value = "ok"
+
+    assert fs._root.get("/path") == "ok"
+    assert fs._active_index == 1
+
+  def test_failover_on_dns_error(self):
+    """DNS failure (socket.gaierror inside ConnectionError) triggers failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    dns_exc = req_exceptions.ConnectionError(socket.gaierror("Name or service not known"))
+    resources[0].get.side_effect = _make_webhdfs_ex(parent_exc=dns_exc)
+    resources[1].get.return_value = "ok"
+
+    assert fs._root.get("/path") == "ok"
+    assert fs._active_index == 1
+
+  def test_failover_updates_url_and_client(self):
+    """After failover, fs._url and fs._client reflect the new active endpoint"""
+    fs, clients, resources = self._make_fs(self._TWO_URLS)
+    resources[0].get.side_effect = _make_webhdfs_ex(status_code=503)
+    resources[1].get.return_value = "ok"
+
+    fs._root.get("/path")
+
+    assert fs._url == "http://h2:14000/webhdfs/v1"
+    assert fs._client is clients[1]
+
+  def test_no_failover_on_404(self):
+    """404 is a client error - must not trigger failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    ex_404 = _make_webhdfs_ex(status_code=404)
+    resources[0].get.side_effect = ex_404
+
+    with pytest.raises(WebHdfsException) as exc_info:
+      fs._root.get("/missing/path")
+
+    assert exc_info.value is ex_404
+    assert fs._active_index == 0  # index unchanged
+
+  def test_no_failover_on_400(self):
+    """400 Bad Request must not trigger failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    ex_400 = _make_webhdfs_ex(status_code=400)
+    resources[0].get.side_effect = ex_400
+
+    with pytest.raises(WebHdfsException):
+      fs._root.get("/path")
+
+    assert fs._active_index == 0
+
+  def test_no_failover_on_403_permission_denied(self):
+    """HTTP 403 (PermissionDenied) must not trigger failover"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    ex_403 = _make_webhdfs_ex(status_code=403)
+    resources[0].get.side_effect = ex_403
+
+    with pytest.raises(WebHdfsException) as exc_info:
+      fs._root.get("/protected/path")
+
+    assert exc_info.value is ex_403
+    assert fs._active_index == 0
+
+  def test_redirect_307_propagates_without_failover(self):
+    """307 is re-raised immediately; no failover; last_client is set"""
+    fs, clients, resources = self._make_fs(self._TWO_URLS)
+    ex_307 = _make_webhdfs_ex(status_code=307)
+    resources[0].invoke.side_effect = ex_307
+
+    with pytest.raises(WebHdfsException) as exc_info:
+      fs._root.invoke("PUT", "/new/file")
+
+    assert exc_info.value is ex_307
+    assert fs._active_index == 0  # no failover happened
+    # last_client recorded for use by _invoke_with_redirect
+    assert fs._root._thread_local.last_client is clients[0]
+
+  def test_all_endpoints_down_raises_last_exception(self):
+    """when all endpoints fail, the last WebHdfsException is re-raised"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    ex0 = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("h1 down"))
+    ex1 = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("h2 down"))
+    resources[0].get.side_effect = ex0
+    resources[1].get.side_effect = ex1
+
+    with pytest.raises(WebHdfsException) as exc_info:
+      fs._root.get("/path")
+
+    assert exc_info.value is ex1
+
+  def test_active_index_points_to_last_tried_endpoint(self):
+    """after exhausting all endpoints, active_index is at the last attempted one"""
+    fs, _, resources = self._make_fs(self._TWO_URLS)
+    resources[0].get.side_effect = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("h1 down"))
+    resources[1].get.side_effect = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("h2 down"))
+
+    with pytest.raises(WebHdfsException):
+      fs._root.get("/path")
+
+    # After 2-URL round: switched from 0-1 on first failure,
+    # then raised on second failure without switching again
+    assert fs._active_index == 1
+
+  def test_single_url_backward_compat(self):
+    """single URL behaves exactly as before — no failover, 1 attempt"""
+    fs, _, resources = self._make_fs(self._ONE_URL)
+    assert len(fs._urls) == 1
+    assert fs._active_index == 0
+
+    resources[0].get.return_value = {"result": "ok"}
+    result = fs._root.get("/path")
+    assert result == {"result": "ok"}
+
+  def test_single_url_error_propagates_immediately(self):
+    """single URL — error propagates on first attempt, no retry loop"""
+    fs, _, resources = self._make_fs(self._ONE_URL)
+    ex = _make_webhdfs_ex(parent_exc=req_exceptions.ConnectionError("down"))
+    resources[0].get.side_effect = ex
+
+    with pytest.raises(WebHdfsException) as exc_info:
+      fs._root.get("/path")
+
+    assert exc_info.value is ex
+    resources[0].get.assert_called_once()  # exactly 1 attempt
+
+  def test_invalid_url_raises_on_init(self):
+    """malformed URL (missing scheme) raises ValueError at init time"""
+    with patch.object(WebHdfs, "_make_client", return_value=MagicMock()), patch("hadoop.fs.webhdfs.resource.Resource"):
+      with pytest.raises(ValueError, match="Invalid webhdfs_url entry"):
+        WebHdfs(url="httpfs1:14000/webhdfs/v1", fs_defaultfs="hdfs://namenode:8020")
+
+  def test_empty_url_raises_on_init(self):
+    """empty webhdfs_url raises ValueError at init time"""
+    with patch.object(WebHdfs, "_make_client", return_value=MagicMock()), patch("hadoop.fs.webhdfs.resource.Resource"):
+      with pytest.raises(ValueError, match="must contain at least one valid URL"):
+        WebHdfs(url="", fs_defaultfs="hdfs://namenode:8020")
+
+  def test_second_url_invalid_raises_on_init(self):
+    """only the second URL in a comma-separated list is malformed"""
+    with patch.object(WebHdfs, "_make_client", return_value=MagicMock()), patch("hadoop.fs.webhdfs.resource.Resource"):
+      with pytest.raises(ValueError, match="Invalid webhdfs_url entry"):
+        WebHdfs(
+          url="http://h1:14000/webhdfs/v1,bad-url-no-scheme",
+          fs_defaultfs="hdfs://namenode:8020",
+        )
