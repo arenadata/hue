@@ -84,6 +84,34 @@ CONNECTOR_TYPES = [
     }
   },
   {
+    'nice_name': 'Kyuubi',
+    'dialect': 'kyuubi',
+    'interface': 'jdbc',
+    'category': 'editor',
+    'description': 'Apache Kyuubi - distributed SQL gateway via JDBC',
+    'settings': [
+      {'name': 'url', 'value': 'jdbc:hive2://localhost:10009/default'},
+      {'name': 'driver', 'value': 'org.apache.kyuubi.jdbc.KyuubiHiveDriver'},
+      {'name': 'user', 'value': ''},
+      {'name': 'password', 'value': ''},
+    ],
+    'properties': {
+      'is_sql': True,
+      'sql_identifier_quote': '`',
+      'sql_identifier_comment_single': '--',
+      'has_catalog': False,
+      'has_database': True,
+      'has_table': True,
+      'has_live_queries': False,
+      'has_optimizer_risks': False,
+      'has_optimizer_values': False,
+      'has_auto_limit': False,
+      'has_reference_language': False,
+      'has_reference_functions': False,
+      'has_use_statement': True,
+    }
+  },
+  {
     'nice_name': 'Impala',
     'dialect': 'impala',
     'interface': 'hiveserver2',
