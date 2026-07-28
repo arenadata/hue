@@ -18,7 +18,8 @@
 import logging
 from urllib.parse import urlparse
 
-from desktop.lib.conf import Config, coerce_string
+from desktop.conf import SSL_CERTIFICATE, SSL_PRIVATE_KEY, default_ssl_cacerts, default_ssl_validate
+from desktop.lib.conf import Config, coerce_bool, coerce_string
 
 LOG = logging.getLogger()
 
@@ -63,4 +64,39 @@ PRINCIPAL_NAME = Config(
     help="Name of Kerberos principal when using security",
     default="zookeeper",
     type=str,
+)
+
+SSL_ENABLED = Config(
+    "ssl_enabled",
+    help="Use TLS/SSL when connecting to ZooKeeper.",
+    default=False,
+    type=coerce_bool,
+)
+
+SSL_CACERTS = Config(
+    "ssl_cacerts",
+    help="Path to Certificate Authority certificates for ZooKeeper TLS.",
+    type=str,
+    dynamic_default=default_ssl_cacerts,
+)
+
+SSL_CERT = Config(
+    "ssl_cert",
+    help="Path to the ZooKeeper client certificate file.",
+    type=str,
+    dynamic_default=lambda: SSL_CERTIFICATE.get(),
+)
+
+SSL_KEY = Config(
+    "ssl_key",
+    help="Path to the ZooKeeper client private key file.",
+    type=str,
+    dynamic_default=lambda: SSL_PRIVATE_KEY.get(),
+)
+
+SSL_VALIDATE = Config(
+    "ssl_validate",
+    help="Choose whether Hue should validate certificates received from ZooKeeper.",
+    type=coerce_bool,
+    dynamic_default=default_ssl_validate,
 )
