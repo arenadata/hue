@@ -52,6 +52,16 @@ def zkensemble():
   return "localhost:2181"
 
 
+def default_ssl_cert():
+  """Path to the default ZooKeeper client certificate file."""
+  return SSL_CERTIFICATE.get()
+
+
+def default_ssl_key():
+  """Path to the default ZooKeeper client private key file."""
+  return SSL_PRIVATE_KEY.get()
+
+
 ENSEMBLE = Config(
     "ensemble",
     help="ZooKeeper ensemble. Comma separated list of Host/Port, e.g. localhost:2181,localhost:2182,localhost:2183",
@@ -84,14 +94,14 @@ SSL_CERT = Config(
     "ssl_cert",
     help="Path to the ZooKeeper client certificate file.",
     type=str,
-    dynamic_default=lambda: SSL_CERTIFICATE.get(),
+    dynamic_default=default_ssl_cert,
 )
 
 SSL_KEY = Config(
     "ssl_key",
     help="Path to the ZooKeeper client private key file.",
     type=str,
-    dynamic_default=lambda: SSL_PRIVATE_KEY.get(),
+    dynamic_default=default_ssl_key,
 )
 
 SSL_VALIDATE = Config(
