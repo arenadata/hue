@@ -68,6 +68,51 @@ class UnitTests(object):
     assert kwargs['sasl_options'] == {'mechanism': 'GSSAPI', 'service': 'zookeeper'}
     assert 'sasl_server_principal' not in kwargs
 
+  def test_get_kazoo_client_kwargs_uses_sasl_options_for_kerberized_hue_without_hdfs(self):
+    from libzookeeper import models
+
+    reset = libzookeeper_conf.PRINCIPAL_NAME.set_for_testing('zookeeper')
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value='/etc/security/keytabs/hue.service.keytab'):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+    finally:
+      reset()
+
+    assert kwargs['sasl_options'] == {'mechanism': 'GSSAPI', 'service': 'zookeeper'}
+
+  def test_get_kazoo_client_kwargs_does_not_use_sasl_without_kerberos_or_hdfs(self):
+    from libzookeeper import models
+
+    with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+      with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value=''):
+        kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+
+    assert kwargs['sasl_options'] is None
+
+  def test_get_kazoo_client_kwargs_does_not_use_sasl_without_zookeeper_principal(self):
+    from libzookeeper import models
+
+    reset = libzookeeper_conf.PRINCIPAL_NAME.set_for_testing('')
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value='/etc/security/keytabs/hue.service.keytab'):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+    finally:
+      reset()
+
+    assert kwargs['sasl_options'] is None
+
+  def test_zookeeper_client_still_requires_hdfs_configuration(self):
+    from libzookeeper import models
+
+    with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+      with patch('libzookeeper.models.KazooClient') as KazooClient:
+        with pytest.raises(models.ZookeeperConfigurationException, match=r'No \[hdfs\] configured in hue.ini.'):
+          models.ZookeeperClient()
+
+    KazooClient.assert_not_called()
+
   def test_get_kazoo_client_kwargs_adds_ssl_options(self):
     from libzookeeper import models
 
@@ -80,7 +125,8 @@ class UnitTests(object):
     ]
     try:
       with patch('libzookeeper.models.cluster.get_hdfs', return_value=Mock(security_enabled=False)):
-        kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2281', read_only=False)
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value=''):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2281', read_only=False)
     finally:
       for reset in resets:
         reset()

@@ -38,13 +38,17 @@ class ZookeeperConfigurationException(Exception):
 def _get_zookeeper_sasl_options(require_hdfs=False):
   hdfs = cluster.get_hdfs()
 
-  if hdfs is None:
-    if require_hdfs:
-      raise ZookeeperConfigurationException('No [hdfs] configured in hue.ini.')
-    return None
+  if hdfs is None and require_hdfs:
+    raise ZookeeperConfigurationException('No [hdfs] configured in hue.ini.')
 
-  if hdfs.security_enabled:
-    return {'mechanism': 'GSSAPI', 'service': PRINCIPAL_NAME.get() or 'zookeeper'}
+  principal_name = PRINCIPAL_NAME.get()
+  security_enabled = hdfs is not None and hdfs.security_enabled
+  if not require_hdfs:
+    from desktop.conf import KERBEROS
+    security_enabled = security_enabled or bool(principal_name and KERBEROS.HUE_KEYTAB.get())
+
+  if security_enabled:
+    return {'mechanism': 'GSSAPI', 'service': principal_name or 'zookeeper'}
 
   return None
 
