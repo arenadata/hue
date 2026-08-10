@@ -2162,6 +2162,25 @@
   # Name of Kerberos principal when using security.
   ## principal_name=zookeeper
 
+  # Use TLS/SSL when connecting to ZooKeeper.
+  ## ssl_enabled=false
+
+  # Path to Certificate Authority certificates for ZooKeeper TLS.
+  # Defaults to desktop.ssl_cacerts when not set.
+  ## ssl_cacerts=/etc/hue/cacerts.pem
+
+  # Path to the ZooKeeper client certificate file.
+  # Defaults to desktop.ssl_certificate when not set.
+  ## ssl_cert=/etc/hue/cert.pem
+
+  # Path to the ZooKeeper client private key file.
+  # Defaults to desktop.ssl_private_key when not set.
+  ## ssl_key=/etc/hue/key.pem
+
+  # Choose whether Hue should validate certificates received from ZooKeeper.
+  # Defaults to desktop.ssl_validate when not set.
+  ## ssl_validate=true
+
 
 ###########################################################################
 # Settings for the RDBMS application
