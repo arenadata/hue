@@ -74,7 +74,8 @@ def index(request):
 
   return render('index.mako', request, {
       'clusters': CLUSTERS.get(),
-      'overview': overview
+      'overview': overview,
+      'is_embeddable': request.GET.get('is_embeddable', False),
   })
 
 
@@ -87,6 +88,7 @@ def view(request, id):
   return render('view.mako', request, {
       'cluster': cluster, 'all_stats': stats, 'leader': leader, 'followers': followers,
       'clusters': CLUSTERS.get(),
+      'is_embeddable': request.GET.get('is_embeddable', False),
   })
 
 
@@ -106,7 +108,8 @@ def clients(request, id, host):
     'cluster': cluster,
     'host': host,
     'port': port,
-    'clients': clients
+    'clients': clients,
+    'is_embeddable': request.GET.get('is_embeddable', False),
   })
 
 
@@ -126,6 +129,7 @@ def tree(request, id, path):
       'znode': znode,
       'children': children,
       'clusters': CLUSTERS.get(),
+      'is_embeddable': request.GET.get('is_embeddable', False),
     },
   )
 
@@ -166,7 +170,7 @@ def create(request, id, path):
   else:
     form = CreateZNodeForm()
 
-  return render('create.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), })
+  return render('create.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })
 
 
 def edit_as_base64(request, id, path):
@@ -189,7 +193,7 @@ def edit_as_base64(request, id, path):
       data=node.get('data64', ''),
       version=node.get('version', '-1')))
 
-  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), })
+  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })
 
 
 def edit_as_text(request, id, path):
@@ -208,4 +212,4 @@ def edit_as_text(request, id, path):
   else:
     form = EditZNodeForm(dict(data=node.get('data64', '').decode('base64').strip(), version=node.get('version', '-1')))
 
-  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), })
+  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })

@@ -240,6 +240,7 @@ ${ hueIcons.symbols() }
         <div id="embeddable_useradmin_addldapgroups" class="embeddable"></div>
         <div id="embeddable_useradmin_edituser" class="embeddable"></div>
         <div id="embeddable_hbase" class="embeddable"></div>
+        <div id="embeddable_zookeeper" class="embeddable"></div>
         <div id="embeddable_security_hive" class="embeddable"></div>
         <div id="embeddable_security_hdfs" class="embeddable"></div>
         <div id="embeddable_security_hive2" class="embeddable"></div>

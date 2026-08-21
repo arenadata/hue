@@ -25,8 +25,10 @@
 
 <%namespace name="shared" file="shared_components.mako" />
 
+%if not is_embeddable:
 ${ commonheader("ZooKeeper Browser > Edit Znode > %s" % path, app_name, user, request) | n,unicode }
 ${ shared.menubar() }
+%endif
 
 <%
   _split = path.split("/");
@@ -54,4 +56,6 @@ ${ shared.header(_breadcrumbs,clusters) }
 
 ${ shared.footer() }
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

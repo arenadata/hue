@@ -716,6 +716,15 @@ class OnePageViewModel {
         }
       },
       { url: '/hbase/', app: 'hbase' },
+      { url: '/zookeeper/', app: 'zookeeper' },
+      {
+        url: '/zookeeper/*',
+        app: function (ctx) {
+          self.currentContextParams(ctx.params);
+          self.currentQueryString(ctx.querystring);
+          self.loadApp('zookeeper', true);
+        }
+      },
       { url: '/help', app: 'help' },
       {
         url: '/home2*',
