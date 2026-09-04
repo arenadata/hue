@@ -11,6 +11,7 @@ services:
       volumes:
         - ./hue.ini:/usr/share/hue/desktop/conf/z-hue.ini
         - ../../../desktop/libs/notebook/src/notebook/connectors:/usr/share/hue/desktop/libs/notebook/src/notebook/connectors
+        - ../../../desktop/core/src/desktop/static/desktop/js/bundles/hue:/usr/share/hue/desktop/core/src/desktop/static/desktop/js/bundles/hue
       depends_on:
         database:
           condition: service_healthy
