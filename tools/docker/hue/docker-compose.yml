@@ -2,7 +2,7 @@ version: '3'
 
 services:
   cloudera:
-      image: gethue/hue:latest
+      image: gethue/hue:local
       hostname: hue
       container_name: hue
       dns: 8.8.8.8
@@ -10,8 +10,11 @@ services:
       - "8888:8888"
       volumes:
         - ./hue.ini:/usr/share/hue/desktop/conf/z-hue.ini
+        - ../../../desktop/libs/notebook/src/notebook/connectors:/usr/share/hue/desktop/libs/notebook/src/notebook/connectors
       depends_on:
-      - "database"
+        database:
+          condition: service_healthy
+      restart: on-failure
   database:
       image: mysql:5.7
       ports:
@@ -21,10 +24,24 @@ services:
           - data:/var/lib/mysql
           - ./init.sql:/data/application/init.sql
       environment:
-          MYSQL_ROOT_USER: root
           MYSQL_ROOT_PASSWORD: secret
           MYSQL_DATABASE: hue
-          MYSQL_USER: root
-          MYSQL_PASSWORD: secret
+      healthcheck:
+          test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
+          interval: 5s
+          timeout: 5s
+          retries: 10
+  starrocks:
+      image: starrocks/allin1-ubuntu:latest
+      container_name: starrocks
+      ports:
+      - "9030:9030"
+      - "8030:8030"
+      - "8040:8040"
+      healthcheck:
+          test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-u", "root", "-e", "SHOW DATABASES"]
+          interval: 10s
+          timeout: 5s
+          retries: 10
 volumes:
   data:
