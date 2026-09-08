@@ -26,9 +26,15 @@ class JdbcApiStarrocks(JdbcApi):
   def _createAssist(self, db):
     return StarrocksAssist(db)
 
+  @property
+  def show_catalogs(self):
+    return str(self.options.get('show_catalogs', 'true')).lower() != 'false'
+
   def get_browse_query(self, snippet, database, table, partition_spec=None):
-    catalog, db = database.split('.', 1)
-    return 'SELECT * FROM `%s`.`%s`.`%s` LIMIT 1000' % (catalog, db, table)
+    if self.show_catalogs:
+      catalog, db = database.split('.', 1)
+      return 'SELECT * FROM `%s`.`%s`.`%s` LIMIT 1000' % (catalog, db, table)
+    return 'SELECT * FROM `%s`.`%s` LIMIT 1000' % (database, table)
 
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     if self.db is None:
@@ -38,15 +44,21 @@ class JdbcApiStarrocks(JdbcApi):
     response = {'status': -1}
 
     if database is None:
-      response['databases'] = assist.get_all_databases()
+      response['databases'] = assist.get_all_databases() if self.show_catalogs else assist.get_databases()
     elif table is None:
-      catalog, db = database.split('.', 1)
-      tables = assist.get_tables_full(catalog, db)
+      if self.show_catalogs:
+        catalog, db = database.split('.', 1)
+        tables = assist.get_tables_full(catalog, db)
+      else:
+        tables = assist.get_tables_full(None, database)
       response['tables'] = [t['name'] for t in tables]
       response['tables_meta'] = tables
     else:
-      catalog, db = database.split('.', 1)
-      columns = assist.get_columns_full(catalog, db, table)
+      if self.show_catalogs:
+        catalog, db = database.split('.', 1)
+        columns = assist.get_columns_full(catalog, db, table)
+      else:
+        columns = assist.get_columns_full(None, database, table)
       response['columns'] = [col['name'] for col in columns]
       response['extended_columns'] = columns
 
@@ -60,10 +72,10 @@ class JdbcApiStarrocks(JdbcApi):
     assist = self._createAssist(self.db)
     response = {'status': -1, 'result': {}}
 
-    if database and '.' in database:
+    if self.show_catalogs and database and '.' in database:
       catalog, db = database.split('.', 1)
     else:
-      catalog, db = database, None
+      catalog, db = None, database
 
     sample_data, description = assist.get_sample_data(catalog, db, table, column)
 
@@ -92,12 +104,18 @@ class StarrocksAssist(Assist):
     rows, _ = query_and_fetch(self.db, 'SHOW CATALOGS')
     return [row[0].strip() for row in rows if row[0].strip() != 'information_schema']
 
-  def get_databases(self, catalog):
-    rows, _ = query_and_fetch(self.db, 'SHOW DATABASES FROM `%s`' % catalog)
+  def get_databases(self, catalog=None):
+    if catalog:
+      rows, _ = query_and_fetch(self.db, 'SHOW DATABASES FROM `%s`' % catalog)
+      return [row[0].strip() for row in rows]
+    rows, _ = query_and_fetch(self.db, 'SHOW DATABASES')
     return [row[0].strip() for row in rows]
 
   def get_tables_full(self, catalog, database, table_names=[]):
-    rows, _ = query_and_fetch(self.db, "SHOW TABLES FROM `%s`.`%s`" % (catalog, database))
+    if catalog:
+      rows, _ = query_and_fetch(self.db, "SHOW TABLES FROM `%s`.`%s`" % (catalog, database))
+    else:
+      rows, _ = query_and_fetch(self.db, "SHOW TABLES FROM `%s`" % database)
     return [{'name': row[0].strip(), 'type': 'Table', 'comment': ''} for row in rows]
 
   def get_columns_full(self, catalog, database, table):
@@ -110,4 +128,6 @@ class StarrocksAssist(Assist):
 
   def get_sample_data(self, catalog, database, table, column=None):
     column = column or '*'
-    return query_and_fetch(self.db, 'SELECT %s FROM `%s`.`%s`.`%s` LIMIT 100' % (column, catalog, database, table))
+    if catalog:
+      return query_and_fetch(self.db, 'SELECT %s FROM `%s`.`%s`.`%s` LIMIT 100' % (column, catalog, database, table))
+    return query_and_fetch(self.db, 'SELECT %s FROM `%s`.`%s` LIMIT 100' % (column, database, table))
