@@ -15,10 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 from librdbms.jdbc import query_and_fetch
 
 from notebook.connectors.jdbc import Assist, JdbcApi
 from notebook.connectors.base import AuthenticationRequired
+
+LOG = logging.getLogger()
 
 
 class JdbcApiStarrocks(JdbcApi):
@@ -96,8 +100,12 @@ class StarrocksAssist(Assist):
     catalogs = self.get_catalogs()
     result = []
     for catalog in catalogs:
-      for db in self.get_databases(catalog):
-        result.append('%s.%s' % (catalog, db))
+      try:
+        for db in self.get_databases(catalog):
+          result.append('%s.%s' % (catalog, db))
+      except Exception as e:
+        LOG.error('Failed to fetch databases from catalog %s: %s' % (catalog, str(e)))
+        continue
     return result
 
   def get_catalogs(self):
