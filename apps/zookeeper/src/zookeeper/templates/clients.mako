@@ -25,8 +25,10 @@
 
 <%namespace name="shared" file="shared_components.mako" />
 
+%if not is_embeddable:
 ${ commonheader(_('Clients'), app_name, user, request) | n,unicode }
 ${ shared.menubar() }
+%endif
 
 <%
   _breadcrumbs = [
@@ -64,4 +66,6 @@ ${ shared.header(_breadcrumbs, clusters) }
 
 ${ shared.footer() }
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

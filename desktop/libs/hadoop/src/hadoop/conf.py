@@ -23,7 +23,7 @@ import logging
 from django.utils.translation import gettext_lazy as _t
 
 from desktop.conf import default_ssl_validate, has_connectors
-from desktop.lib.conf import Config, ConfigSection, UnspecifiedConfigSection, coerce_bool
+from desktop.lib.conf import Config, ConfigSection, UnspecifiedConfigSection, coerce_bool, coerce_string
 
 LOG = logging.getLogger()
 DEFAULT_NN_HTTP_PORT = 50070
@@ -84,8 +84,14 @@ HDFS_CLUSTERS = UnspecifiedConfigSection(
       ),
       WEBHDFS_URL=Config(
           "webhdfs_url",
-          help="The URL to WebHDFS/HttpFS service. Defaults to the WebHDFS URL on the NameNode.",
-          type=str,
+          help=(
+              "Comma-separated list of WebHDFS/HttpFS URLs for HA failover. "
+              "Hue will transparently switch to the next URL on connection errors "
+              "(connection refused, timeout, HTTP 502/503/504). "
+              "A single URL is also valid and behaves as before. "
+              "Defaults to the WebHDFS URL on the NameNode."
+          ),
+          type=coerce_string,
           default="http://localhost:50070/webhdfs/v1"
       ),
       NN_KERBEROS_PRINCIPAL=Config(

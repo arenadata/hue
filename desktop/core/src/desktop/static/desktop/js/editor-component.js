@@ -23,9 +23,9 @@
         QUERY_HISTORY_UPLOAD_LIMIT: window.QUERY_HISTORY_UPLOAD_LIMIT
     };
 
-    window.EDITOR_BINDABLE_ELEMENT = '#editorComponents';
+    window.EDITOR_BINDABLE_ELEMENT = (window.location.pathname.indexOf('notebook') > -1) ? '#notebookComponents' : '#editorComponents';
 
-    window.EDITOR_SUFFIX = 'editor';
+    window.EDITOR_SUFFIX = (window.location.pathname.indexOf('notebook') > -1) ? 'notebook' : 'editor';
 
     var HUE_PUB_SUB_EDITOR_ID = (window.location.pathname.indexOf('notebook') > -1) ? 'notebook' : 'editor';
 
@@ -49,19 +49,19 @@
             hive: {
                 placeHolder: I18n("Example: SELECT * FROM tablename, or press CTRL + space"),
                 aceMode: 'ace/mode/hive',
-                snippetImage: '${ static("beeswax/art/icon_beeswax_48.png") }',
+                snippetImage: window.STATIC_URLS['beeswax/art/icon_beeswax_48.png'],
                 sqlDialect: true
             },
             hplsql: {
                 placeHolder: I18n("Example: CREATE PROCEDURE name AS SELECT * FROM tablename limit 10 GO"),
                 aceMode: 'ace/mode/hplsql',
-                snippetImage: '${ static("beeswax/art/icon_beeswax_48.png") }',
+                snippetImage: window.STATIC_URLS['beeswax/art/icon_beeswax_48.png'],
                 sqlDialect: true
             },
             impala: {
                 placeHolder: I18n("Example: SELECT * FROM tablename, or press CTRL + space"),
                 aceMode: 'ace/mode/impala',
-                snippetImage: '${ static("impala/art/icon_impala_48.png") }',
+                snippetImage: window.STATIC_URLS['impala/art/icon_impala_48.png'],
                 sqlDialect: true
             },
             presto: {
@@ -136,7 +136,7 @@
             pig: {
                 placeHolder: I18n("Example: 1 + 1, or press CTRL + space"),
                 aceMode: 'ace/mode/pig',
-                snippetImage: '${ static("pig/art/icon_pig_48.png") }'
+                snippetImage: window.STATIC_URLS['pig/art/icon_pig_48.png']
             },
             postgresql: {
                 placeHolder: I18n("Example: SELECT * FROM tablename, or press CTRL + space"),
@@ -165,30 +165,30 @@
             pyspark: {
                 placeHolder: I18n("Example: 1 + 1, or press CTRL + space"),
                 aceMode: 'ace/mode/python',
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }'
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png']
             },
             r: {
                 placeHolder: I18n("Example: 1 + 1, or press CTRL + space"),
                 aceMode: 'ace/mode/r',
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }'
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png']
             },
             scala: {
                 placeHolder: I18n("Example: 1 + 1, or press CTRL + space"),
                 aceMode: 'ace/mode/scala',
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }'
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png']
             },
             spark: {
                 placeHolder: I18n("Example: 1 + 1, or press CTRL + space"),
                 aceMode: 'ace/mode/scala',
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }'
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png']
             },
             spark2: {
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }'
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png']
             },
             sparksql: {
                 placeHolder: I18n("Example: SELECT * FROM tablename, or press CTRL + space"),
                 aceMode: 'ace/mode/sparksql',
-                snippetImage: '${ static("spark/art/icon_spark_48.png") }',
+                snippetImage: window.STATIC_URLS['spark/art/icon_spark_48.png'],
                 sqlDialect: true
             },
             mapreduce: {
@@ -199,7 +199,7 @@
             },
             sqoop1: {
                 placeHolder: I18n("Example: import  --connect jdbc:hsqldb:file:db.hsqldb --table TT --target-dir hdfs://localhost:8020/user/foo -m 1"),
-                snippetImage: '${ static("sqoop/art/icon_sqoop_48.png") }'
+                snippetImage: window.STATIC_URLS['sqoop/art/icon_sqoop_48.png']
             },
             distcp: {
                 snippetIcon: 'fa-files-o'

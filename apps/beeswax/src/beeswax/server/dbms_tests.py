@@ -23,7 +23,7 @@ import pytest
 from django.core.cache import caches
 from django.test import TestCase
 
-from beeswax.server.dbms import HiveServer2Dbms, get_query_server_config
+from beeswax.server.dbms import HiveServer2Dbms, get_query_server_config, get_zk_hs2
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.settings import CACHES_HIVE_DISCOVERY_KEY
 
@@ -165,6 +165,37 @@ class TestGetQueryServerConfig():
           assert query_server['server_name'] == 'beeswax'
           assert query_server['server_host'] == 'hive-llap-1.gethue.com'
           assert query_server['server_port'] == 10000
+
+  def test_get_zk_hs2_uses_libzookeeper_kazoo_kwargs(self):
+    kazoo_kwargs = {
+      'hosts': 'zk1.example.com:2281',
+      'read_only': True,
+      'sasl_options': {'mechanism': 'GSSAPI', 'service': 'zookeeper'},
+      'use_ssl': True,
+      'ca': '/etc/hue/ca.pem',
+      'certfile': '/etc/hue/client.pem',
+      'keyfile': '/etc/hue/client.key',
+      'verify_certs': True,
+    }
+
+    with patch('beeswax.server.dbms.get_kazoo_client_kwargs', return_value=kazoo_kwargs) as get_kazoo_client_kwargs:
+      with patch('beeswax.server.dbms.KazooClient') as KazooClient:
+        with patch('beeswax.server.dbms.libzookeeper_conf.ENSEMBLE.get', return_value='zk1.example.com:2281'):
+          with patch('beeswax.conf.ZOOKEEPER_CONN_TIMEOUT.get', return_value=30):
+            with patch('beeswax.conf.HIVE_DISCOVERY_HIVESERVER2_ZNODE.get', return_value='/hiveserver2'):
+              KazooClient.return_value = Mock(
+                exists=Mock(return_value=True),
+                get_children=Mock(return_value=['serverUri=hive-1.example.com:10000;sequence=0000000001']),
+                stop=Mock()
+              )
+
+              hiveservers = get_zk_hs2()
+
+    get_kazoo_client_kwargs.assert_called_once_with(hosts='zk1.example.com:2281', read_only=True)
+    KazooClient.assert_called_once_with(**kazoo_kwargs)
+    KazooClient.return_value.start.assert_called_once_with(timeout=30)
+    KazooClient.return_value.stop.assert_called_once_with()
+    assert hiveservers == ['serverUri=hive-1.example.com:10000;sequence=0000000001']
 
 
 # TODO: all the combinations in new test methods, e.g.:

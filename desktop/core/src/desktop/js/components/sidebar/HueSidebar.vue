@@ -124,7 +124,8 @@
     text: `<i class="fa fa-fw fa-i-cursor"></i>`,
     warehouses: `<i class="altus-icon altus-adb-cluster" style="margin: 0 1px 0 3px"></i>`,
     workflows: `<svg class="hi hi-fw"><use href="#hi-oozie"></use></svg>`,
-    yarn: `<i class="fa fa-fw fa-tasks"></i>`
+    yarn: `<i class="fa fa-fw fa-tasks"></i>`,
+    zookeeper: `<i class="fa fa-fw fa-sitemap"></i>`
   };
 
   const getIconHtml = (name: string): string => APP_ICON_INDEX[name] || APP_ICON_INDEX.default;
@@ -359,6 +360,7 @@
           case 'importer':
           case 'indexes':
           case 'kafka':
+          case 'zookeeper':
             break;
           default:
             console.warn('No sidebar alternative for app: ' + appName);

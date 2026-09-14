@@ -30,7 +30,7 @@
   from hadoop.conf import UPLOAD_CHUNK_SIZE
   from indexer.conf import ENABLE_NEW_INDEXER
   from jobbrowser.conf import ENABLE_HISTORY_V2, ENABLE_QUERY_BROWSER, ENABLE_HIVE_QUERY_BROWSER, MAX_JOB_FETCH, \
-      QUERY_STORE
+      QUERY_STORE, ENABLE_SCHEDULED_TASKS, ENABLE_LIVY_BROWSER
   from filebrowser.conf import SHOW_UPLOAD_BUTTON, REMOTE_STORAGE_HOME, MAX_FILE_SIZE_UPLOAD_LIMIT
   from filebrowser.views import MAX_FILEEDITOR_SIZE
   from indexer.conf import ENABLE_NEW_INDEXER, ENABLE_DIRECT_UPLOAD, ENABLE_SQOOP, ENABLE_KAFKA, ENABLE_ALTUS, \
@@ -96,6 +96,7 @@
     useradmin_edituser: { url: '/useradmin/users/edit/:user', title: '${_('User Admin - Edit User')}' },
     useradmin_addldapgroups: { url: '/useradmin/users/add_ldap_groups', title: '${_('User Admin - Add LDAP Groups')}' },
     hbase: { url: '/hbase/', title: '${_('HBase Browser')}' },
+    zookeeper: { url: '/zookeeper/', title: '${_('ZooKeeper Browser')}' },
     security_hive: { url: '/security/hive', title: '${_('Security - Hive')}' },
     security_hdfs: { url: '/security/hdfs', title: '${_('Security - HDFS')}' },
     security_hive2: { url: '/security/hive2', title: '${_('Security - Hive')}' },
@@ -153,7 +154,7 @@
     'useradmin_permissions', 'useradmin_editpermission', 'useradmin_configurations', 'useradmin_newuser',
     'useradmin_addldapusers', 'useradmin_addldapgroups', 'useradmin_edituser', 'useradmin_organizations',
     'importer',
-    'security_hive', 'security_hdfs', 'security_hive2', 'security_solr', 'logs',
+    'security_hive', 'security_hdfs', 'security_hive2', 'security_solr', 'logs', 'zookeeper',
     % if hasattr(ENABLE_NEW_INDEXER, 'get') and ENABLE_NEW_INDEXER.get():
       'indexes',
     % endif
@@ -200,6 +201,8 @@
   window.ENABLE_HISTORY_V2 = '${ hasattr(ENABLE_HISTORY_V2, 'get') and ENABLE_HISTORY_V2.get() }' === 'True';
   window.ENABLE_HIVE_QUERY_BROWSER = '${ hasattr(ENABLE_HIVE_QUERY_BROWSER, 'get') and ENABLE_HIVE_QUERY_BROWSER.get() }' === 'True';
   window.ENABLE_QUERY_BROWSER = '${ hasattr(ENABLE_QUERY_BROWSER, 'get') and ENABLE_QUERY_BROWSER.get() }' === 'True';
+  window.ENABLE_SCHEDULED_TASKS = '${ hasattr(ENABLE_SCHEDULED_TASKS, 'get') and ENABLE_SCHEDULED_TASKS.get() }' === 'True';
+  window.ENABLE_LIVY_BROWSER = '${ hasattr(ENABLE_LIVY_BROWSER, 'get') and ENABLE_LIVY_BROWSER.get() }' === 'True';
   window.ENABLE_QUERY_STORE = '${ hasattr(QUERY_STORE, 'IS_ENABLED') and hasattr(QUERY_STORE.IS_ENABLED, 'get') and QUERY_STORE.IS_ENABLED.get() }' === 'True'
   window.ENABLE_SQL_SYNTAX_CHECK = '${ conf.ENABLE_SQL_SYNTAX_CHECK.get() }' === 'True';
 

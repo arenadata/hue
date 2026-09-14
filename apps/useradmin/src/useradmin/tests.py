@@ -1351,6 +1351,37 @@ class MockLdapConnection(object):
     self.ldap_cert = ldap_cert
 
 
+class MockPagedResultsControl(object):
+  controlType = '1.2.840.113556.1.4.319'
+
+  def __init__(self, criticality, size, cookie):
+    self.criticality = criticality
+    self.size = size
+    self.cookie = cookie
+
+
+class MockPagedLdapHandle(object):
+  def __init__(self, pages):
+    self.pages = pages
+    self.cookies = []
+
+  def search_ext(self, search_dn, scope, ldap_filter, attrlist, serverctrls=None):
+    self.cookies.append(serverctrls[0].cookie)
+    return len(self.cookies)
+
+  def result3(self, msgid):
+    page = self.pages[msgid - 1]
+    return ldap.RES_SEARCH_RESULT, page['data'], msgid, [MockPagedResultsControl(True, len(page['data']), page['cookie'])]
+
+
+def _make_ldap_connection(page_size, ldap_handle):
+  connection = object.__new__(useradmin.ldap_access.LdapConnection)
+  connection.ldap_config = Mock()
+  connection.ldap_config.LDAP_PAGE_SIZE.get.return_value = page_size
+  connection.ldap_handle = ldap_handle
+  return connection
+
+
 def test_get_connection_bind_password():
   # Unfortunately our tests leak a cached test ldap connection across functions, so we need to clear it out.
   useradmin.ldap_access.CACHED_LDAP_CONN = None
@@ -1414,6 +1445,48 @@ def test_get_connection_bind_password_script():
     useradmin.ldap_access.LdapConnection = OriginalLdapConnection
     for f in reset:
       f()
+
+
+def test_search_uses_paged_results_until_cookie_is_empty():
+  ldap_handle = MockPagedLdapHandle([
+    {'data': [('uid=user1', {'uid': [b'user1']})], 'cookie': b'next'},
+    {'data': [('uid=user2', {'uid': [b'user2']})], 'cookie': b''},
+  ])
+  connection = _make_ldap_connection(page_size=1, ldap_handle=ldap_handle)
+
+  original_control = useradmin.ldap_access.SimplePagedResultsControl
+  useradmin.ldap_access.SimplePagedResultsControl = MockPagedResultsControl
+  try:
+    result_type, result_data = connection._search('dc=example,dc=com', ldap.SCOPE_SUBTREE, '(uid=*)', ['uid'])
+  finally:
+    useradmin.ldap_access.SimplePagedResultsControl = original_control
+
+  assert result_type == ldap.RES_SEARCH_RESULT
+  assert result_data == [
+    ('uid=user1', {'uid': [b'user1']}),
+    ('uid=user2', {'uid': [b'user2']}),
+  ]
+  assert ldap_handle.cookies == [b'', b'next']
+
+
+def test_search_falls_back_to_plain_search_when_paging_is_unsupported():
+  ldap_handle = Mock()
+  ldap_handle.search_ext.side_effect = ldap.UNAVAILABLE_CRITICAL_EXTENSION()
+  ldap_handle.search.return_value = 'plain-result-id'
+  ldap_handle.result.return_value = (ldap.RES_SEARCH_RESULT, [('uid=user1', {'uid': [b'user1']})])
+  connection = _make_ldap_connection(page_size=1000, ldap_handle=ldap_handle)
+
+  original_control = useradmin.ldap_access.SimplePagedResultsControl
+  useradmin.ldap_access.SimplePagedResultsControl = MockPagedResultsControl
+  try:
+    result_type, result_data = connection._search('dc=example,dc=com', ldap.SCOPE_SUBTREE, '(uid=*)', ['uid'])
+  finally:
+    useradmin.ldap_access.SimplePagedResultsControl = original_control
+
+  assert result_type == ldap.RES_SEARCH_RESULT
+  assert result_data == [('uid=user1', {'uid': [b'user1']})]
+  ldap_handle.search.assert_called_once_with('dc=example,dc=com', ldap.SCOPE_SUBTREE, '(uid=*)', ['uid'])
+  ldap_handle.result.assert_called_once_with('plain-result-id')
 
 
 class LastActivityMiddlewareTests(object):

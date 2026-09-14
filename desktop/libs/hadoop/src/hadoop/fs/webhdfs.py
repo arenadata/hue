@@ -34,6 +34,7 @@ from django.http.multipartparser import MultiPartParser
 from django.utils.encoding import smart_str
 from django.utils.translation import gettext as _
 from past.builtins import long
+from requests import exceptions as req_exceptions
 
 import hadoop.conf
 import desktop.conf
@@ -49,7 +50,77 @@ DEFAULT_HDFS_SUPERUSER = desktop.conf.DEFAULT_HDFS_SUPERUSER.get()
 # The number of bytes to read if not specified
 DEFAULT_READ_SIZE = 1024 * 1024  # 1MB
 
+# HTTP status codes that indicate the HttpFS/WebHDFS endpoint is unavailable
+# and Hue should fail over to the next URL in the list
+# 503 is explicitly required, 502/504 are added because reverse-proxies
+# in front of HttpFS commonly return these on backend unavailability
+FAILOVER_HTTP_CODES = (502, 503, 504)
+
 LOG = logging.getLogger()
+
+
+def _is_failover_error(webhdfs_ex):
+  """Return True if webhdfs_ex is a transient connectivity failure that warrants
+  failing over to the next HttpFS endpoint (502/503/504, ConnectionError, Timeout)
+  4xx errors and 307 redirects are not failover conditions
+  """
+  if webhdfs_ex.code in FAILOVER_HTTP_CODES:
+    return True
+  parent = webhdfs_ex.get_parent_ex()
+  if isinstance(parent, (req_exceptions.ConnectionError, req_exceptions.Timeout)):
+    return True
+  return False
+
+
+class FailoverResource(object):
+  """Wraps resource.Resource to retry requests on the next HttpFS endpoint
+  on transient connectivity errors.  All WebHdfs operations go through
+  self._root, so failover is handled here without touching individual methods"""
+
+  def __init__(self, fs):
+    self._fs = fs
+    self._thread_local = threading.local()  # last_client per-thread for _invoke_with_redirect
+
+  def get(self, *args, **kwargs):
+    return self._call('get', *args, **kwargs)
+
+  def put(self, *args, **kwargs):
+    return self._call('put', *args, **kwargs)
+
+  def delete(self, *args, **kwargs):
+    return self._call('delete', *args, **kwargs)
+
+  def invoke(self, *args, **kwargs):
+    return self._call('invoke', *args, **kwargs)
+
+  def _call(self, method_name, *args, **kwargs):
+    n = len(self._fs._urls)
+    tried = set()  # indices already attempted by this thread in this call
+    last_ex = None
+    while len(tried) < n:
+      # int read is atomic under the GIL — intentionally lock-free here
+      idx = self._fs._active_index
+      if idx in tried:
+        # _active_index was wrapped back to an already-tried endpoint by a
+        # concurrent thread, nudge it forward and re-read
+        self._fs._switch_to_next_endpoint(idx)
+        continue
+      tried.add(idx)
+      res = self._fs._resources[idx]
+      try:
+        result = getattr(res, method_name)(*args, **kwargs)
+        self._thread_local.last_client = self._fs._clients[idx]
+        return result
+      except WebHdfsException as ex:
+        # Record before failover decision: a 307 is also raised here and
+        # _invoke_with_redirect needs the client that produced it
+        self._thread_local.last_client = self._fs._clients[idx]
+        last_ex = ex
+        if len(tried) < n and _is_failover_error(ex):
+          self._fs._switch_to_next_endpoint(idx)
+          continue
+        raise
+    raise last_ex  # safety net, all n endpoints exhausted
 
 
 class WebHdfs(Hdfs):
@@ -70,7 +141,19 @@ class WebHdfs(Hdfs):
       temp_dir="/tmp",
       umask=0o1022,
       hdfs_supergroup=None):
-    self._url = url
+    # Support a comma-separated list of HttpFS URLs for HA failover.
+    self._urls = [u.strip() for u in url.split(',') if u.strip()]
+    if not self._urls:
+      raise ValueError("webhdfs_url must contain at least one valid URL, got: %r" % url)
+    for u in self._urls:
+      parsed = urlparse(u)
+      if not parsed.scheme or not parsed.netloc:
+        raise ValueError(
+            "Invalid webhdfs_url entry %r — expected http(s)://host:port/... "
+            "(full value: %r)" % (u, url)
+        )
+    self._url = self._urls[0]  # updated by _switch_to_next_endpoint on failover
+
     self._superuser = hdfs_superuser
     self._security_enabled = security_enabled
     self._ssl_cert_ca_verify = ssl_cert_ca_verify
@@ -85,8 +168,12 @@ class WebHdfs(Hdfs):
     self._has_trash_support = True
     self.expiration = None
 
-    self._client = self._make_client(url, security_enabled, ssl_cert_ca_verify)
-    self._root = resource.Resource(self._client)
+    self._clients = [self._make_client(u, security_enabled, ssl_cert_ca_verify) for u in self._urls]
+    self._resources = [resource.Resource(c) for c in self._clients]
+    self._active_index = 0
+    self._failover_lock = threading.Lock()  # guards writes to _active_index/_client/_url
+    self._client = self._clients[0]  # kept for read_url() and _invoke_with_redirect
+    self._root = FailoverResource(self)
 
     # To store user info
     self._thread_local = threading.local()
@@ -110,6 +197,23 @@ class WebHdfs(Hdfs):
 
   def __str__(self):
     return "WebHdfs at %s" % self._url
+
+  def _switch_to_next_endpoint(self, failing_index):
+    """Advance _active_index to the next endpoint using compare-and-swap
+
+    Only switches if _active_index still equals failing_index, preventing
+    multiple threads from advancing the index more than once per failure
+    """
+    msg = None
+    with self._failover_lock:
+      if self._active_index == failing_index:
+        self._active_index = (self._active_index + 1) % len(self._urls)
+        new_idx = self._active_index
+        self._client = self._clients[new_idx]
+        self._url = self._urls[new_idx]
+        msg = "WebHdfs failing over from %s to: %s" % (self._urls[failing_index], self._urls[new_idx])
+    if msg:
+      LOG.warning(msg)
 
   def _make_client(self, url, security_enabled, ssl_cert_ca_verify=True):
     client = http_client.HttpClient(url, exc_class=WebHdfsException, logger=LOG)
@@ -841,8 +945,14 @@ class WebHdfs(Hdfs):
     # Now talk to the real thing. The redirect url already includes the params.
     client = self._make_client(next_url, self.security_enabled, self.ssl_cert_ca_verify)
 
-    # Make sure to reuse the session in order to preserve the Kerberos cookies.
-    client._session = self._client._session
+    # Reuse the Kerberos session from the HttpFS client that issued the 307
+    # redirect. In a multi-endpoint setup self._client may have already been
+    # advanced to a different endpoint by a concurrent failover, so we read
+    # the per-thread last_client recorded by FailoverResource._call instead of
+    # using self._client directly. Falls back to self._client when there is
+    # only one endpoint (thread_local not yet populated)
+    redirecting_client = getattr(self._root._thread_local, 'last_client', self._client)
+    client._session = redirecting_client._session
     if headers is None:
       headers = {}
     headers["Content-Type"] = 'application/octet-stream'

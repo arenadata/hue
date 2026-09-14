@@ -87,7 +87,7 @@ class ZooKeeper(object):
 
     def get(self, path):
         """ Get a node """
-        url = "%s/znodes/v1%s" % (self._base, path)
+        url = "%s/znodes/v1%s" % (self._base, urllib.parse.quote(path, safe='/'))
         return self._do_get(url)
 
     def get_children(self, path):
@@ -100,7 +100,7 @@ class ZooKeeper(object):
 
     def get_children_paths(self, path, uris=False):
         """ Get the paths for children nodes """
-        url = "%s/znodes/v1%s?view=children" % (self._base, path)
+        url = "%s/znodes/v1%s?view=children" % (self._base, urllib.parse.quote(path, safe='/'))
         resp = self._do_get(url)
         for child in resp.get('children', []):
             yield child if not uris else resp['child_uri_template']\
