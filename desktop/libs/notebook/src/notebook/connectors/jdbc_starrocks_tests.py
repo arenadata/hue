@@ -35,7 +35,8 @@ class TestJdbcApiStarrocks(TestCase):
     options = {'url': 'jdbc:mysql://starrocks:9030/', 'driver': 'com.mysql.cj.jdbc.Driver', 'user': 'root', 'password': ''}
     if show_catalogs is not None:
       options['show_catalogs'] = str(show_catalogs).lower()
-    api = JdbcApiStarrocks(self.user, interpreter={'options': options, 'name': 'starrocks'})
+    with patch('notebook.connectors.jdbc_starrocks.Jdbc'):
+      api = JdbcApiStarrocks(self.user, interpreter={'options': options, 'name': 'starrocks'})
     api.db = MagicMock()
     return api
 
