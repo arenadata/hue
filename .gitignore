@@ -12,6 +12,7 @@
 # Python compiled files
 *.pyc
 *.pyo
+*.so
 
 # Language compiled files
 apps/*/src/*/locale/*/LC_MESSAGES/*.mo
@@ -28,12 +29,14 @@ desktop/libs/*/src/*/locale/*/LC_MESSAGES/*.mo
 # Build directory and environment
 build
 env
+venv
 metastore_db
 VERSION_INFO
 npm_dist
 
 # Generated configuration
 desktop/conf/*.ini
+tools/docker/hue/hue.ini
 
 # ctags file
 tags
@@ -121,6 +124,9 @@ junitresults*
 
 # Generated js bundles
 desktop/core/src/desktop/static/desktop/js/bundles/
+
+# Integration tests (local only)
+*_integration_tests.py
 
 # Hugo generated files
 docs/docs-site/public/
