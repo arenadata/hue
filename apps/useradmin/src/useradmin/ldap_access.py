@@ -19,8 +19,8 @@ This module provides access to LDAP servers, along with some basic functionality
 User Admin to work seamlessly with LDAP.
 """
 
-import re
 import logging
+import re
 
 from django.utils.encoding import smart_str
 
@@ -34,9 +34,11 @@ try:
   import ldap
   import ldap.filter
   from ldap import SCOPE_SUBTREE
+  from ldap.controls import SimplePagedResultsControl
 except ImportError:
   LOG.warning('ldap module not found')
   SCOPE_SUBTREE = None
+  SimplePagedResultsControl = None
 
 CACHED_LDAP_CONN = None
 
@@ -193,6 +195,48 @@ class LdapConnection(object):
         msg = "Failed to bind to LDAP server anonymously"
 
     raise LdapBindException(msg)
+
+  def _get_ldap_page_size(self):
+    if hasattr(self.ldap_config, 'LDAP_PAGE_SIZE'):
+      return self.ldap_config.LDAP_PAGE_SIZE.get()
+
+    return desktop.conf.LDAP.LDAP_PAGE_SIZE.get()
+
+  def _search_without_paging(self, search_dn, scope, ldap_filter, attrlist):
+    ldap_result_id = self.ldap_handle.search(search_dn, scope, ldap_filter, attrlist)
+    return self.ldap_handle.result(ldap_result_id)
+
+  def _search(self, search_dn, scope, ldap_filter, attrlist):
+    page_size = self._get_ldap_page_size()
+
+    if page_size <= 0 or SimplePagedResultsControl is None:
+      return self._search_without_paging(search_dn, scope, ldap_filter, attrlist)
+
+    result_data = []
+    page_control = SimplePagedResultsControl(criticality=True, size=page_size, cookie=b'')
+
+    try:
+      while True:
+        ldap_result_id = self.ldap_handle.search_ext(search_dn, scope, ldap_filter, attrlist, serverctrls=[page_control])
+        result_type, page_result_data, _, serverctrls = self.ldap_handle.result3(ldap_result_id)
+        result_data.extend(page_result_data)
+
+        page_controls = [
+          ctrl for ctrl in serverctrls or []
+          if getattr(ctrl, 'controlType', None) == SimplePagedResultsControl.controlType
+        ]
+        if not page_controls:
+          break
+
+        cookie = page_controls[0].cookie
+        if not cookie:
+          break
+
+        page_control.cookie = cookie
+    except ldap.UNAVAILABLE_CRITICAL_EXTENSION:
+      return self._search_without_paging(search_dn, scope, ldap_filter, attrlist)
+
+    return ldap.RES_SEARCH_RESULT, result_data
 
   def _get_search_params(self, name, attr, find_by_dn=False):
     """
@@ -364,8 +408,7 @@ class LdapConnection(object):
     self._attrlist = attrlist
 
     try:
-      ldap_result_id = self.ldap_handle.search(search_dn, scope, ldap_filter, attrlist)
-      result_type, result_data = self.ldap_handle.result(ldap_result_id)
+      result_type, result_data = self._search(search_dn, scope, ldap_filter, attrlist)
 
       if result_type == ldap.RES_SEARCH_RESULT:
         return self._transform_find_user_results(result_data, user_name_attr)
@@ -423,8 +466,7 @@ class LdapConnection(object):
     self._ldap_filter = ldap_filter
     self._attrlist = attrlist
 
-    ldap_result_id = self.ldap_handle.search(search_dn, scope, ldap_filter, attrlist)
-    result_type, result_data = self.ldap_handle.result(ldap_result_id)
+    result_type, result_data = self._search(search_dn, scope, ldap_filter, attrlist)
 
     if result_type == ldap.RES_SEARCH_RESULT:
       return self._transform_find_group_results(result_data, group_name_attr, group_member_attr)
@@ -448,8 +490,7 @@ class LdapConnection(object):
     self._ldap_filter = ldap_filter
     self._attrlist = attrlist
 
-    ldap_result_id = self.ldap_handle.search(search_dn, scope, ldap_filter, attrlist)
-    result_type, result_data = self.ldap_handle.result(ldap_result_id)
+    result_type, result_data = self._search(search_dn, scope, ldap_filter, attrlist)
 
     if result_type == ldap.RES_SEARCH_RESULT:
       return result_data

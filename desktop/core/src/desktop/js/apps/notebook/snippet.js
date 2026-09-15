@@ -2172,7 +2172,7 @@ class Snippet {
     };
 
     self.fetchResultData = function (rows, startOver) {
-      if (!self.isFetchingData) {
+      if (!self.isFetchingData && self.statusForButtons() != 'canceling') {
         if (self.status() === 'available') {
           startLongOperationTimeout();
           self.isFetchingData = true;

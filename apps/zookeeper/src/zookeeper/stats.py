@@ -92,8 +92,10 @@ class ZooKeeperStats(object):
       data = ""
       try:
         s.connect(self._address)
-        s.send(cmd)
+        s.send(cmd.encode('utf-8') if isinstance(cmd, str) else cmd)
         data = s.recv(2048)
+        if isinstance(data, bytes):
+          data = data.decode('utf-8')
         s.close()
       except Exception as e:
         LOG.error('Problem connecting to host %s, exception raised : %s' % (self._host, e))

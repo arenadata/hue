@@ -74,6 +74,7 @@ from desktop.lib.view_util import location_to_url
 from desktop.settings import CACHES_HIVE_DISCOVERY_KEY
 from indexer.file_format import HiveFormat
 from libzookeeper import conf as libzookeeper_conf
+from libzookeeper.models import get_kazoo_client_kwargs
 
 LOG = logging.getLogger()
 
@@ -97,7 +98,7 @@ reset_ha()
 
 def get_zk_hs2():
   hiveservers = None
-  zk = KazooClient(hosts=libzookeeper_conf.ENSEMBLE.get(), read_only=True)
+  zk = KazooClient(**get_kazoo_client_kwargs(hosts=libzookeeper_conf.ENSEMBLE.get(), read_only=True))
   zk.start(timeout=ZOOKEEPER_CONN_TIMEOUT.get())
   znode = HIVE_DISCOVERY_HIVESERVER2_ZNODE.get()
   if zk.exists(znode):
@@ -174,7 +175,7 @@ def get_query_server_config(name='beeswax', connector=None):
       if activeEndpoint is None:
         if HIVE_DISCOVERY_LLAP.get():
           LOG.debug("Checking zookeeper for discovering Hive LLAP server endpoint")
-          zk = KazooClient(hosts=libzookeeper_conf.ENSEMBLE.get(), read_only=True)
+          zk = KazooClient(**get_kazoo_client_kwargs(hosts=libzookeeper_conf.ENSEMBLE.get(), read_only=True))
           zk.start(timeout=ZOOKEEPER_CONN_TIMEOUT.get())
           if HIVE_DISCOVERY_LLAP_HA.get():
             znode = "{0}/instances".format(HIVE_DISCOVERY_LLAP_ZNODE.get())

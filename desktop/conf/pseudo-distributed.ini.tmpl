@@ -242,6 +242,10 @@
   # e.g. Query result in Editors and Dashboards, file in File Browser...
   ## enable_download=true
 
+  # Delimiter used for CSV exports across Hue.
+  # Supports a single character (e.g. ",", ";" or "\t").
+  ## csv_export_delimiter=","
+
   # Global setting to enable or disable document sharing.
   # Note that this does not affect currently shared documents.
   ## enable_sharing=true
@@ -363,6 +367,59 @@
     [[[admin-1]]]
      name=Hue
      email=hue@localhost.com
+
+  # Vault integration (Hashicorp/OpenBao)
+  # -------------------
+  [[vault]]
+    # Vault server URL.
+    ## url='http://127.0.0.1:8200'
+
+    # Authentication type. Supported: token, userpass, ldap, kubernetes, kerberos
+    ## auth_type=token
+
+    # Namespace
+    ## namespace=
+
+    # Vault KV engine mount point
+    ## mount_point=secret
+
+    # Vault KV engine version (1 or 2)
+    ## kv_engine_version=2
+
+    # Default key name for secret value retrieval
+    ## kv_default_key_secret=value
+
+    # Token authentication
+    ## token=
+    # Path to file containing Vault token (token or path can be set)
+    ##token_path=
+
+    # Username/Password authentication (userpass, ldap).
+    ## username=
+    ## password=
+    # Script to execute that returns password for userpass or LDAP authentication
+    ## password_script=
+
+    # Kubernetes authentication
+    # Kubernetes role name for Kubernetes authentication
+    ## kubernetes_role=
+    # Path to Kubernetes service account JWT token
+    ## kubernetes_jwt_path=/var/run/secrets/kubernetes.io/serviceaccount/token
+
+    # SSL settings
+    #Either a boolean to indicate whether TLS verification should be performed when sending requests to Vault,
+    #or a string pointing at the CA bundle to use for verification. See http://docs.python-requests.org/en/master/user/advanced/#ssl-cert-verification.
+    ## verify=
+    # Certificates for use in requests sent to the Vault instance. This should be a tuple with the
+    #certificate and then key.
+    ## cert=
+
+    # Timeout settings
+    # Request timeout in seconds for Vault operations
+    ## timeout=30
+
+    # Custom mount point
+    ## auth_mount_point=
 
   # UI customizations
   # -------------------
@@ -570,6 +627,9 @@
     # 2 for logging the method calls with arguments and the complete results and 9 for also logging the traceback of method calls.
     ## trace_level=0
 
+    # The page size to use for LDAP paged searches. Set to 0 to disable paging.
+    ## ldap_page_size=1000
+
     [[[users]]]
 
       # Base filter for searching for users
@@ -641,6 +701,9 @@
         # Possible values for trace_level are 0 for no logging, 1 for only logging the method calls with arguments,
         # 2 for logging the method calls with arguments and the complete results and 9 for also logging the traceback of method calls.
         ## trace_level=0
+
+        # The page size to use for LDAP paged searches. Set to 0 to disable paging.
+        ## ldap_page_size=1000
 
         ## [[[[[users]]]]]
 
@@ -2098,6 +2161,25 @@
 
   # Name of Kerberos principal when using security.
   ## principal_name=zookeeper
+
+  # Use TLS/SSL when connecting to ZooKeeper.
+  ## ssl_enabled=false
+
+  # Path to Certificate Authority certificates for ZooKeeper TLS.
+  # Defaults to desktop.ssl_cacerts when not set.
+  ## ssl_cacerts=/etc/hue/cacerts.pem
+
+  # Path to the ZooKeeper client certificate file.
+  # Defaults to desktop.ssl_certificate when not set.
+  ## ssl_cert=/etc/hue/cert.pem
+
+  # Path to the ZooKeeper client private key file.
+  # Defaults to desktop.ssl_private_key when not set.
+  ## ssl_key=/etc/hue/key.pem
+
+  # Choose whether Hue should validate certificates received from ZooKeeper.
+  # Defaults to desktop.ssl_validate when not set.
+  ## ssl_validate=true
 
 
 ###########################################################################

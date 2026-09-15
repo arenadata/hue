@@ -15,16 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import object
 import logging
 import sys
+from builtins import object
 
-from beeswax import data_export
+from django.utils.translation import gettext as _
+
 from desktop.lib.i18n import force_unicode, smart_str
 from librdbms.jdbc import Jdbc, query_and_fetch
-
-from notebook.connectors.base import Api, QueryError, AuthenticationRequired, _get_snippet_name
-from django.utils.translation import gettext as _
+from notebook.connectors.base import Api, AuthenticationRequired, QueryError
 
 LOG = logging.getLogger()
 
@@ -58,14 +57,32 @@ class JdbcApi(Api):
 
     self.db = None
     self.options = interpreter['options']
+    self.row_limit = self.options.get('row_limit', 1000)
+    self.java_home = self._resolve_java_home()
+
+    if 'enable_auth_form' in self.options and self.options['enable_auth_form'] == 'False':
+      self.options['password'] = ''
 
     if self.cache_key in API_CACHE:
       self.db = API_CACHE[self.cache_key]
     elif 'password' in self.options:
-      username = self.options.get('user') or user.username
+      username = self.user.username
       impersonation_property = self.options.get('impersonation_property')
       self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
-        impersonation_property=impersonation_property, impersonation_user=user.username)
+        impersonation_property=impersonation_property, impersonation_user=username, java_home=self.java_home)
+
+  def _resolve_java_home(self):
+    service = self.options.get('java_runtime_service')
+    if not service:
+      return None
+
+    from desktop.lib.runtime_utils import resolve_java_home
+    java_home = resolve_java_home(service=service)
+    if not java_home:
+      LOG.warning(
+        "Could not resolve JAVA_HOME for interpreter '%s' (java_runtime_service='%s'); using default java",
+        self.interpreter.get('name'), service)
+    return java_home
 
   def create_session(self, lang=None, properties=None):
     global API_CACHE
@@ -76,9 +93,12 @@ class JdbcApi(Api):
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
       if 'password' in properties:
-        user = properties.get('user') or self.options.get('user')
+        user = self.user.username
         props['properties'] = {'user': user}
-        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'))
+        impersonation_property = self.options.get('impersonation_property')
+        self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], user, properties.pop('password'),
+                                                   impersonation_property=impersonation_property, impersonation_user=user,
+                                                   java_home=self.java_home)
         self.db.test_connection(throw_exception=True)
 
     if self.db is None:
@@ -91,7 +111,7 @@ class JdbcApi(Api):
     if self.db is None:
       raise AuthenticationRequired()
 
-    data, description = query_and_fetch(self.db, snippet['statement'], 1000)
+    data, description = query_and_fetch(self.db, snippet['statement'], self.row_limit)
     has_result_set = data is not None
 
     return {
@@ -151,14 +171,14 @@ class JdbcApi(Api):
     return response
 
   @query_error_handler
-  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
+  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=None, is_async=False, operation=None):
     if self.db is None:
       raise AuthenticationRequired()
 
     assist = self._createAssist(self.db)
     response = {'status': -1, 'result': {}}
 
-    sample_data, description = assist.get_sample_data(database, table, column)
+    sample_data, description = assist.get_sample_data(database, table, column, nested)
 
     if sample_data or description:
       response['status'] = 0
@@ -201,11 +221,13 @@ class Assist(object):
         "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
       return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'TABLE_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
+      if 'TABLE_COMMENT' in str(e).upper():
+        LOG.warning('TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
         tables, description = query_and_fetch(self.db,
           "SELECT TABLE_NAME, NULL as TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
         return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
+      else:
+        LOG.error(f'Unable to get tables for "{database}":', exc_info=True)
 
   def get_columns(self, database, table):
     columns = self.get_columns_full(database, table)
@@ -218,15 +240,17 @@ class Assist(object):
           database, table))
       return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
     except Exception as e:
-      if 'SQLServerException' in str(e) and 'COLUMN_COMMENT' in str(e):
-        LOG.warn('Seems like SQLServer is use, COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
+      if 'COLUMN_COMMENT' in str(e).upper():
+        LOG.warning('COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
         columns, description = query_and_fetch(self.db,
           "SELECT COLUMN_NAME, DATA_TYPE, NULL as COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS "
           "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (
             database, table))
         return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
+      else:
+        LOG.error(f'Unable to get columns for "{database}.{table}":', exc_info=True)
 
-  def get_sample_data(self, database, table, column=None):
+  def get_sample_data(self, database, table, column=None, nested=None):
     column = column or '*'
     # data, description =  query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
     # response['rows'] = data

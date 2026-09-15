@@ -6,6 +6,7 @@ LABEL description="Hue SQL Assistant - gethue.com"
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y && apt-get install -y \
+  default-jdk-headless \
   python3-pip \
   libkrb5-dev  \
   libsasl2-modules-gssapi-mit \
@@ -48,7 +49,12 @@ RUN pip3 install --upgrade --no-cache-dir setuptools virtualenv pip && \
   ln -fs /usr/local/bin/pip3.8 /usr/bin/pip3 && \
   PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
   PREFIX=/usr/share ROOT=/usr/share/hue PYTHON_VER=python3.8 ROOT=/hue \
+  SYS_PYTHON=/usr/bin/python3.8 SYS_PIP=/usr/local/bin/pip3.8 make desktop && \
+  /hue/build/env/bin/pip install python-daemon==2.2.4 pytz==2021.3 && \
+  PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+  PREFIX=/usr/share ROOT=/usr/share/hue PYTHON_VER=python3.8 ROOT=/hue \
   SYS_PYTHON=/usr/bin/python3.8 SYS_PIP=/usr/local/bin/pip3.8 make apps install && \
+  /usr/share/hue/build/env/bin/pip install python-daemon==2.2.4 pytz==2021.3 && \
   chown -R hue /usr/share/hue && \
   npm cache clean --force && \
   pip cache purge && \
@@ -88,9 +94,13 @@ RUN ./build/env/bin/pip install --no-cache-dir \
   # otherwise Code: 516, Authentication failed will display \
   infi.clickhouse_orm==1.0.4 \
   mysqlclient==2.1.1 \
-  PyAthena==2.25.2
+  PyAthena==2.25.2 \
   # PyAthena == 3.x.x is latest, but not working with current configuration \
-  # otherwise, 'VisitableType' object is not subscriptable in Hue UI
+  # otherwise, 'VisitableType' object is not subscriptable in Hue UI \
+  py4j
+
+RUN curl -fsSL https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.30/mysql-connector-java-8.0.30.jar \
+  -o /usr/share/hue/mysql-connector-java.jar
 
 USER hue
 

@@ -26,8 +26,10 @@
 
 <%namespace name="shared" file="shared_components.mako" />
 
+%if not is_embeddable:
 ${ commonheader("ZooKeeper Browser > Tree > %s > %s" % (cluster['nice_name'], path), app_name, user, request) | n,unicode }
 ${ shared.menubar() }
+%endif
 
 <%
   _split = path.split("/");
@@ -57,9 +59,9 @@ ${ shared.header(_breadcrumbs, clusters, False) }
         % endif
         % if is_admin(user):
         <li class="white">
-          <button class="btn" onclick="location.href='${url('zookeeper:create', id=cluster['id'], path=path)}'">
+          <a class="btn" href="${url('zookeeper:create', id=cluster['id'], path=path)}">
             <i class="fa fa-plus-circle"></i> ${ _('Add') }
-          </button>
+          </a>
           <button id="removeBtn" class="btn btn-danger disable-feedback" data-msg="${_('Are you sure you want to delete %s?' % path)}" data-url="${url('zookeeper:delete', id=cluster['id'], path=path)}">
             <i class="fa fa-times-circle"></i> ${ _('Remove current ZNode') }
           </button>
@@ -127,8 +129,8 @@ ${ shared.footer() }
     <p class="question"></p>
   </div>
   <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${ _('Cancel') }</a>
-    <a id="removeBtnModal" href="#" class="btn btn-danger disable-feedback">${ _('Yes, delete it!') }</a>
+    <a href="javascript:void(0)" class="btn" data-dismiss="modal">${ _('Cancel') }</a>
+    <a id="removeBtnModal" href="javascript:void(0)" class="btn btn-danger disable-feedback">${ _('Yes, delete it!') }</a>
   </div>
 </div>
 
@@ -158,4 +160,6 @@ ${ shared.footer() }
 </script>
 
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

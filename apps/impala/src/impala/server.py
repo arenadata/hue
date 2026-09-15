@@ -30,7 +30,7 @@ from beeswax.server.hive_server2_lib import HiveServerClient
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.rest.http_client import HttpClient
 from desktop.lib.rest.resource import Resource
-from impala.conf import COORDINATOR_URL, DAEMON_API_AUTH_SCHEME, DAEMON_API_PASSWORD, DAEMON_API_PASSWORD_SCRIPT, DAEMON_API_USERNAME
+from impala.conf import COORDINATOR_URL, DAEMON_API_AUTH_SCHEME, DAEMON_API_PASSWORD, DAEMON_API_PASSWORD_SCRIPT, DAEMON_API_USERNAME, SSL
 from impala.impala_flags import get_webserver_certificate_file, is_kerberos_enabled, is_webserver_spnego_enabled
 
 LOG = logging.getLogger()
@@ -143,6 +143,7 @@ class ImpalaDaemonApi(object):
     self._security_enabled = is_kerberos_enabled()
     self._webserver_spnego_enabled = is_webserver_spnego_enabled()
     self._thread_local = threading.local()
+    self._client.set_verify(SSL.VALIDATE.get())
 
     # You can set username/password for Impala Web UI which overrides kerberos
     daemon_api_pwd = \

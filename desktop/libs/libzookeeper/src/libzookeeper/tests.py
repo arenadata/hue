@@ -20,12 +20,14 @@ import os
 import pytest
 import shutil
 import tempfile
+from unittest.mock import Mock, patch
 
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.test_utils import add_to_group, grant_access
 from hadoop.pseudo_hdfs4 import is_live_cluster
 from useradmin.models import User
 
+from libzookeeper import conf as libzookeeper_conf
 from libzookeeper.models import ZookeeperClient
 from libzookeeper.conf import zkensemble, ENSEMBLE
 
@@ -50,6 +52,93 @@ class UnitTests(object):
       assert 'zoo:2181,zoo2:2181' == ENSEMBLE.get()
     finally:
       clear()
+
+  def test_get_kazoo_client_kwargs_uses_sasl_options_for_secure_hdfs(self):
+    from libzookeeper import models
+
+    reset = libzookeeper_conf.PRINCIPAL_NAME.set_for_testing('zookeeper')
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=Mock(security_enabled=True)):
+        kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+    finally:
+      reset()
+
+    assert kwargs['hosts'] == 'zk1.example.com:2181'
+    assert kwargs['read_only'] is True
+    assert kwargs['sasl_options'] == {'mechanism': 'GSSAPI', 'service': 'zookeeper'}
+    assert 'sasl_server_principal' not in kwargs
+
+  def test_get_kazoo_client_kwargs_uses_sasl_options_for_kerberized_hue_without_hdfs(self):
+    from libzookeeper import models
+
+    reset = libzookeeper_conf.PRINCIPAL_NAME.set_for_testing('zookeeper')
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value='/etc/security/keytabs/hue.service.keytab'):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+    finally:
+      reset()
+
+    assert kwargs['sasl_options'] == {'mechanism': 'GSSAPI', 'service': 'zookeeper'}
+
+  def test_get_kazoo_client_kwargs_does_not_use_sasl_without_kerberos_or_hdfs(self):
+    from libzookeeper import models
+
+    with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+      with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value=''):
+        kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+
+    assert kwargs['sasl_options'] is None
+
+  def test_get_kazoo_client_kwargs_does_not_use_sasl_without_zookeeper_principal(self):
+    from libzookeeper import models
+
+    reset = libzookeeper_conf.PRINCIPAL_NAME.set_for_testing('')
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value='/etc/security/keytabs/hue.service.keytab'):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2181', read_only=True)
+    finally:
+      reset()
+
+    assert kwargs['sasl_options'] is None
+
+  def test_zookeeper_client_still_requires_hdfs_configuration(self):
+    from libzookeeper import models
+
+    with patch('libzookeeper.models.cluster.get_hdfs', return_value=None):
+      with patch('libzookeeper.models.KazooClient') as KazooClient:
+        with pytest.raises(models.ZookeeperConfigurationException, match=r'No \[hdfs\] configured in hue.ini.'):
+          models.ZookeeperClient()
+
+    KazooClient.assert_not_called()
+
+  def test_get_kazoo_client_kwargs_adds_ssl_options(self):
+    from libzookeeper import models
+
+    resets = [
+      libzookeeper_conf.SSL_ENABLED.set_for_testing(True),
+      libzookeeper_conf.SSL_CACERTS.set_for_testing('/etc/hue/ca.pem'),
+      libzookeeper_conf.SSL_CERT.set_for_testing('/etc/hue/client.pem'),
+      libzookeeper_conf.SSL_KEY.set_for_testing('/etc/hue/client.key'),
+      libzookeeper_conf.SSL_VALIDATE.set_for_testing(False),
+    ]
+    try:
+      with patch('libzookeeper.models.cluster.get_hdfs', return_value=Mock(security_enabled=False)):
+        with patch('desktop.conf.KERBEROS.HUE_KEYTAB.get', return_value=''):
+          kwargs = models.get_kazoo_client_kwargs(hosts='zk1.example.com:2281', read_only=False)
+    finally:
+      for reset in resets:
+        reset()
+
+    assert kwargs['hosts'] == 'zk1.example.com:2281'
+    assert kwargs['read_only'] is False
+    assert kwargs['sasl_options'] is None
+    assert kwargs['use_ssl'] is True
+    assert kwargs['ca'] == '/etc/hue/ca.pem'
+    assert kwargs['certfile'] == '/etc/hue/client.pem'
+    assert kwargs['keyfile'] == '/etc/hue/client.key'
+    assert kwargs['verify_certs'] is False
 
 
 @pytest.mark.requires_hadoop

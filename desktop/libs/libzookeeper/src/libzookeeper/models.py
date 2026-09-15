@@ -21,7 +21,7 @@ import os
 from kazoo.client import KazooClient
 
 from hadoop import cluster
-from libzookeeper.conf import ENSEMBLE, PRINCIPAL_NAME
+from libzookeeper.conf import ENSEMBLE, PRINCIPAL_NAME, SSL_CACERTS, SSL_CERT, SSL_ENABLED, SSL_KEY, SSL_VALIDATE
 
 
 LOG = logging.getLogger()
@@ -35,25 +35,60 @@ class ZookeeperConfigurationException(Exception):
   pass
 
 
+def _get_zookeeper_sasl_options(require_hdfs=False):
+  hdfs = cluster.get_hdfs()
+
+  if hdfs is None and require_hdfs:
+    raise ZookeeperConfigurationException('No [hdfs] configured in hue.ini.')
+
+  principal_name = PRINCIPAL_NAME.get()
+  security_enabled = hdfs is not None and hdfs.security_enabled
+  if not require_hdfs:
+    from desktop.conf import KERBEROS
+    security_enabled = security_enabled or bool(principal_name and KERBEROS.HUE_KEYTAB.get())
+
+  if security_enabled:
+    return {'mechanism': 'GSSAPI', 'service': principal_name or 'zookeeper'}
+
+  return None
+
+
+def _get_zookeeper_ssl_options():
+  if not SSL_ENABLED.get():
+    return {}
+
+  options = {
+    'use_ssl': True,
+    'verify_certs': SSL_VALIDATE.get(),
+  }
+
+  if SSL_CACERTS.get():
+    options['ca'] = SSL_CACERTS.get()
+  if SSL_CERT.get():
+    options['certfile'] = SSL_CERT.get()
+  if SSL_KEY.get():
+    options['keyfile'] = SSL_KEY.get()
+
+  return options
+
+
+def get_kazoo_client_kwargs(hosts=None, read_only=True, require_hdfs=False):
+  options = {
+    'hosts': hosts if hosts else ENSEMBLE.get(),
+    'read_only': read_only,
+    'sasl_options': _get_zookeeper_sasl_options(require_hdfs=require_hdfs),
+  }
+  options.update(_get_zookeeper_ssl_options())
+  return options
+
+
 class ZookeeperClient(object):
 
   def __init__(self, hosts=None, read_only=True):
     self.hosts = hosts if hosts else ENSEMBLE.get()
     self.read_only = read_only
 
-    hdfs = cluster.get_hdfs()
-
-    if hdfs is None:
-      raise ZookeeperConfigurationException('No [hdfs] configured in hue.ini.')
-
-    if hdfs.security_enabled:
-      self.sasl_server_principal = PRINCIPAL_NAME.get()
-    else:
-      self.sasl_server_principal = None
-
-    self.zk = KazooClient(hosts=self.hosts,
-                          read_only=self.read_only,
-                          sasl_server_principal=self.sasl_server_principal)
+    self.zk = KazooClient(**get_kazoo_client_kwargs(hosts=self.hosts, read_only=self.read_only, require_hdfs=True))
 
 
   def start(self):

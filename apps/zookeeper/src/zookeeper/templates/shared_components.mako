@@ -29,7 +29,7 @@
     <div class="card card-small">
       <h1 class="card-heading simple">
         <div class="btn-group pull-right">
-          <a class="btn dropdown-toggle" data-toggle="dropdown" href="#">
+          <a class="btn dropdown-toggle" data-toggle="dropdown" href="javascript:void(0)">
             ${ _('Go to cluster') }
             <span class="caret"></span>
           </a>

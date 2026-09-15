@@ -18,6 +18,8 @@
 
 from desktop import conf
 from desktop.lib.fs.ozone.client import _make_ofs_client
+from desktop.lib.fs.ozone.ofs import OzoneFS
+from hadoop.fs.webhdfs import WebHdfs
 
 
 class TestOFSClient(object):
@@ -132,4 +134,18 @@ class TestOFSClient(object):
     for reset in cls._resets:
       reset()
 
+
+class TestOzoneFailoverInheritance(object):
+
+  _TWO_URLS = 'http://gethue-ozone1:9778/webhdfs/v1,http://gethue-ozone2:9778/webhdfs/v1'
+
+  def test_ozone_inherits_failover(self):
+    """Comma-separated URLs are parsed by WebHdfs.__init__ and inherited by OzoneFS"""
+    fs = OzoneFS(url=self._TWO_URLS, fs_defaultfs='ofs://ozone1')
+    assert fs._urls == [
+      'http://gethue-ozone1:9778/webhdfs/v1',
+      'http://gethue-ozone2:9778/webhdfs/v1',
+    ]
+    assert fs._active_index == 0
+    assert isinstance(fs, WebHdfs)
 
