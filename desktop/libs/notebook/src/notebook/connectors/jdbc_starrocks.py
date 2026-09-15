@@ -17,15 +17,34 @@
 
 import logging
 
-from librdbms.jdbc import query_and_fetch
+from librdbms.jdbc import Jdbc, query_and_fetch
 
-from notebook.connectors.jdbc import Assist, JdbcApi
-from notebook.connectors.base import AuthenticationRequired
+from notebook.connectors.jdbc import API_CACHE, Assist, JdbcApi
+from notebook.connectors.base import Api, AuthenticationRequired
 
 LOG = logging.getLogger()
 
 
 class JdbcApiStarrocks(JdbcApi):
+
+  def __init__(self, user, interpreter=None):
+    Api.__init__(self, user, interpreter=interpreter)
+    self.db = None
+    self.options = interpreter['options']
+    self.row_limit = self.options.get('row_limit', 1000)
+    self.java_home = self._resolve_java_home() if hasattr(self, '_resolve_java_home') else None
+
+    if self.cache_key in API_CACHE:
+      self.db = API_CACHE[self.cache_key]
+    elif 'password' in self.options:
+      username = self.options.get('user', self.user.username)
+      impersonation_property = self.options.get('impersonation_property')
+      kwargs = dict(impersonation_property=impersonation_property, impersonation_user=username)
+      if self.java_home is not None:
+        kwargs['java_home'] = self.java_home
+      self.db = API_CACHE[self.cache_key] = Jdbc(
+        self.options['driver'], self.options['url'], username, self.options['password'], **kwargs
+      )
 
   def _createAssist(self, db):
     return StarrocksAssist(db)
