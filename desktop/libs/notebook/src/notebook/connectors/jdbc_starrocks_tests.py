@@ -173,12 +173,27 @@ class TestStarrocksAssist(TestCase):
       assert result == [{'name': 'table1', 'type': 'Table', 'comment': ''}]
 
   def test_get_columns_full(self):
-    with patch('notebook.connectors.jdbc_starrocks.query_and_fetch', return_value=([['id', 'int', 'primary key'], ['name', 'varchar', '']], None)):
-      result = self.assist.get_columns_full('default_catalog', 'my_db', 'my_table')
+    with patch('notebook.connectors.jdbc_starrocks.query_and_fetch', return_value=([['id', 'int', 'primary key'], ['name', 'varchar', '']], None)) as mock_qaf:
+      result = self.assist.get_columns_full('hive_catalog', 'my_db', 'my_table')
+      mock_qaf.assert_called_once_with(
+        self.db,
+        "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM `hive_catalog`.information_schema.columns "
+        "WHERE TABLE_SCHEMA='my_db' AND TABLE_NAME='my_table'"
+      )
       assert result == [
         {'name': 'id', 'type': 'int', 'comment': 'primary key'},
         {'name': 'name', 'type': 'varchar', 'comment': ''},
       ]
+
+  def test_get_columns_full_without_catalog(self):
+    with patch('notebook.connectors.jdbc_starrocks.query_and_fetch', return_value=([['id', 'int', '']], None)) as mock_qaf:
+      result = self.assist.get_columns_full(None, 'my_db', 'my_table')
+      mock_qaf.assert_called_once_with(
+        self.db,
+        "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM information_schema.columns "
+        "WHERE TABLE_SCHEMA='my_db' AND TABLE_NAME='my_table'"
+      )
+      assert result == [{'name': 'id', 'type': 'int', 'comment': ''}]
 
   def test_get_sample_data(self):
     rows = [['1', 'Alice'], ['2', 'Bob']]
