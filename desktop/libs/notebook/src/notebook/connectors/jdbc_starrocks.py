@@ -146,10 +146,11 @@ class StarrocksAssist(Assist):
     return [{'name': row[0].strip(), 'type': 'Table', 'comment': ''} for row in rows]
 
   def get_columns_full(self, catalog, database, table):
+    information_schema = '`%s`.information_schema' % catalog if catalog else 'information_schema'
     rows, _ = query_and_fetch(
       self.db,
-      "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM information_schema.columns "
-      "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (database, table)
+      "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM %s.columns "
+      "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (information_schema, database, table)
     )
     return [{'name': row[0].strip(), 'type': row[1], 'comment': row[2] and row[2].strip() or ''} for row in rows]
 
