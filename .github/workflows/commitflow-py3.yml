@@ -119,7 +119,7 @@ jobs:
 
     - name: run python lints
       run: |
-        PYTHONWARNINGS=always ./build/env/bin/hue runruff check
+        PYTHONWARNINGS=always ./build/env/bin/hue runruff --diff-branch origin/${{ github.base_ref || github.ref_name }} check
 
     - name: run documentation lints
       run: |
