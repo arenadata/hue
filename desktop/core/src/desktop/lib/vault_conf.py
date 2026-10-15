@@ -7,6 +7,12 @@ from urllib.parse import urlparse
 LOG = logging.getLogger()
 
 
+def vault_url_host(url: str) -> str:
+    """Host of url lower-cased without the trailing dot, as SPNEGO clients
+    derive the service name; empty when url has no host name."""
+    return (urlparse(url).hostname or '').lower().rstrip('.')
+
+
 @dataclass
 class VaultConfig:
     """
@@ -100,13 +106,13 @@ class VaultConfig:
             if self.keytab_path and not self.principal:
                 raise ValueError("Principal is required for kerberos authentication with a keytab")
             if not self.kerberos_service_principal:
-                host = urlparse(self.url).hostname or ""
+                host = vault_url_host(self.url)
+                if not host:
+                    raise ValueError("Vault URL must have a host name for kerberos authentication")
                 try:
                     is_ip = ipaddress.ip_address(host) is not None
                 except ValueError:
                     is_ip = False
-                if not host:
-                    raise ValueError("Vault URL must have a host name for kerberos authentication")
                 if is_ip:
                     raise ValueError(
                         "Vault URL must use a host name, not an IP, for kerberos authentication "

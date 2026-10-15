@@ -20,7 +20,7 @@ import base64
 from unittest import mock
 
 import pytest
-from hvac.exceptions import Forbidden
+from hvac.exceptions import Forbidden, Unauthorized
 
 from desktop.lib import vault_client
 from desktop.lib.vault_client import VaultClient, VaultSecretResolver
@@ -93,7 +93,8 @@ class TestKerberosLogin:
     _, kwargs = fake_gssapi.Credentials.call_args
     assert kwargs['store']['client_keytab'] == '/etc/hue.keytab'
     assert kwargs['store']['ccache'].startswith('FILE:')
-    assert 'hue_vault_ccache' in kwargs['store']['ccache']
+    assert '/hue_vault_' in kwargs['store']['ccache']
+    assert kwargs['store']['ccache'].endswith('/ccache')
 
   def test_krb5_conf_path_sets_krb5_config(self, fake_gssapi, fake_hvac_client):
     with mock.patch.dict(os.environ, {}, clear=False):
@@ -112,6 +113,13 @@ class TestKerberosLogin:
 
     assert not client.is_initialized
     assert fake_hvac_client.adapter.post.called
+
+  def test_login_request_error_returns_false(self, fake_gssapi, fake_hvac_client):
+    fake_hvac_client.adapter.post.side_effect = Unauthorized('permission denied')
+
+    client = VaultClient(kerberos_config())
+
+    assert not client.is_initialized
 
   def test_missing_gssapi_disables_login(self, fake_hvac_client, caplog):
     with mock.patch.object(vault_client, 'gssapi', None, create=True), \
@@ -139,6 +147,45 @@ class TestTokenRelogin:
     assert fake_hvac_client.adapter.post.call_count == 2
     assert fake_hvac_client.secrets.kv.v2.read_secret_version.call_count == 2
 
+  def test_forbidden_relogin_credential_error_returns_none(self, fake_gssapi, fake_hvac_client):
+    client = VaultClient(kerberos_config())
+    fake_gssapi.Credentials.side_effect = Exception('Cannot contact any KDC')
+    fake_hvac_client.adapter.post.side_effect = [dict(LOGIN_OK)]
+    fake_hvac_client.secrets.kv.v2.read_secret_version.side_effect = [Forbidden()]
+
+    assert client.get_secret('db/password') is None
+
+  def test_forbidden_relogin_failure_invalidates_client(self, fake_gssapi, fake_hvac_client):
+    client = VaultClient(kerberos_config())
+    response = mock.Mock(status_code=401)
+    response.json.return_value = {'errors': ['SPNEGO authentication failed']}
+    fake_hvac_client.adapter.post.side_effect = [response]
+    fake_hvac_client.secrets.kv.v2.read_secret_version.side_effect = [Forbidden()]
+
+    assert client.get_secret('db/password') is None
+    assert not client.is_initialized
+
+  def test_forbidden_non_kerberos_invalidates_client(self, fake_hvac_client):
+    config = VaultConfig(url='https://vault.corp:8200', auth_type='token', token='tok')
+    client = VaultClient(config)
+    assert client.is_initialized
+
+    fake_hvac_client.secrets.kv.v2.read_secret_version.side_effect = [Forbidden()]
+
+    assert client.get_secret('db/password') is None
+    assert not client.is_initialized
+
+  def test_retried_read_fails_again_returns_none(self, fake_gssapi, fake_hvac_client):
+    fake_hvac_client.adapter.post.side_effect = [dict(LOGIN_OK), dict(LOGIN_OK)]
+    fake_hvac_client.secrets.kv.v2.read_secret_version.side_effect = [
+        Forbidden(),
+        Exception('request failed'),
+    ]
+    client = VaultClient(kerberos_config())
+
+    assert client.get_secret('db/password') is None
+    assert client.is_initialized
+
 
 class TestResolverClientCaching:
 
@@ -165,4 +212,20 @@ class TestResolverClientCaching:
       assert resolver._client is None
 
       assert resolver.resolve('vault://db/password') is None
+      assert vault_client_class.call_count == 2
+
+  def test_self_invalidated_client_is_recreated(self):
+    with mock.patch.object(vault_client, 'VaultClient') as vault_client_class:
+      first_client = mock.MagicMock(is_initialized=True)
+      first_client.get_secret.return_value = 's3cr3t'
+      second_client = mock.MagicMock(is_initialized=True)
+      second_client.get_secret.return_value = 's3cr3t-2'
+      vault_client_class.side_effect = [first_client, second_client]
+      resolver = VaultSecretResolver(self.config())
+
+      assert resolver.resolve('vault://db/password') == 's3cr3t'
+      first_client.is_initialized = False
+
+      # A new reference misses the secret cache and must get a fresh client
+      assert resolver.resolve('vault://db/other') == 's3cr3t-2'
       assert vault_client_class.call_count == 2

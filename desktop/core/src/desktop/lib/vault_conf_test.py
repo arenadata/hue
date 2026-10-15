@@ -43,6 +43,10 @@ class TestVaultConfigKerberos:
     with pytest.raises(ValueError, match='IP'):
       VaultConfig(url='https://127.0.0.1:8200', auth_type='kerberos')
 
+  def test_trailing_dot_ip_url_rejected(self):
+    with pytest.raises(ValueError, match='IP'):
+      VaultConfig(url='https://127.0.0.1.:8200', auth_type='kerberos')
+
   def test_ip_url_allowed_with_service_principal(self):
     config = VaultConfig(
         url='https://127.0.0.1:8200',

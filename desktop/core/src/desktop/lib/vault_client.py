@@ -30,7 +30,6 @@ import tempfile
 import ipaddress
 import subprocess
 from typing import Any, Optional
-from urllib.parse import urlparse
 
 try:
     import hvac
@@ -55,7 +54,7 @@ from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from desktop.lib.vault_conf import VaultConfig, get_vault_config
+from desktop.lib.vault_conf import VaultConfig, get_vault_config, vault_url_host
 
 global _resolver
 
@@ -65,10 +64,19 @@ LOG = logging.getLogger()
 # or vault://path/to/secret (key=value by default)
 VAULT_REF_PATTERN = re.compile(r'^vault://(?P<path>[^?]+)(\?key=(?P<key>[^&]+))?$')
 
+_ccache_dir = None
+
 
 def _default_ccache_path() -> str:
-    """Dedicated credential cache so vault logins never touch the default one."""
-    return os.path.join(tempfile.gettempdir(), 'hue_vault_ccache_%d' % os.getpid())
+    """
+  Dedicated credential cache so vault logins never touch the default one.
+  The directory is private (mkdtemp): a predictable path in a world-writable
+  directory would let another local user clobber the cache via a symlink.
+  """
+    global _ccache_dir
+    if _ccache_dir is None:
+        _ccache_dir = tempfile.mkdtemp(prefix='hue_vault_')
+    return os.path.join(_ccache_dir, 'ccache')
 
 
 def _response_errors(response) -> Optional[list]:
@@ -93,7 +101,7 @@ def _build_spnego_authorization(url, service_principal=None, keytab_path=None, p
     if service_principal:
         target = gssapi.Name(service_principal, gssapi.NameType.kerberos_principal)
     else:
-        host = (urlparse(url).hostname or '').lower().rstrip('.')
+        host = vault_url_host(url)
         try:
             is_ip = ipaddress.ip_address(host) is not None
         except ValueError:
@@ -281,27 +289,29 @@ class VaultClient:
     a single POST carrying an Authorization: Negotiate header, answered with
     a client token.
     """
-        if self.config.krb5_conf_path:
-            os.environ['KRB5_CONFIG'] = self.config.krb5_conf_path
-
-        header = _build_spnego_authorization(
-            url=self.config.url,
-            service_principal=self.config.kerberos_service_principal,
-            keytab_path=self.config.keytab_path,
-            principal=self.config.principal,
-            ccache_path=self.config.ccache_path,
-        )
-        if not header:
-            return False
-
-        mount_point = self.config.auth_mount_point or 'kerberos'
-        body = {'role': self.config.kerberos_role} if self.config.kerberos_role else {}
         try:
+            # MIT krb5 reads the profile once per process, so this must be
+            # set before any other Kerberos use.
+            if self.config.krb5_conf_path:
+                os.environ['KRB5_CONFIG'] = self.config.krb5_conf_path
+
+            header = _build_spnego_authorization(
+                url=self.config.url,
+                service_principal=self.config.kerberos_service_principal,
+                keytab_path=self.config.keytab_path,
+                principal=self.config.principal,
+                ccache_path=self.config.ccache_path,
+            )
+            if not header:
+                return False
+
+            mount_point = self.config.auth_mount_point or 'kerberos'
+            body = {'role': self.config.kerberos_role} if self.config.kerberos_role else {}
             response = client_.adapter.post(
                 '/v1/auth/%s/login' % mount_point, json=body, headers={'Authorization': header}
             )
         except Exception as e:
-            LOG.error("Kerberos login request to Vault failed: %s", e)
+            LOG.error("Kerberos login to Vault failed: %s", e)
             return False
 
         auth = response.get('auth') if isinstance(response, dict) else None
@@ -418,24 +428,36 @@ class VaultClient:
                         path, self.config.mount_point)
             return None
         except Forbidden:
-            if self.config.auth_type != 'kerberos':
-                LOG.error("Permission denied reading secret: %s", path)
-                return None
-            # The Kerberos token may simply have expired; a new SPNEGO login
-            # is cheap with a live credential cache, so retry once.
-            LOG.warning("Vault rejected the token, re-authenticating with Kerberos: %s", path)
-            if not self._client or not self._authenticate_kerberos(self._client):
+            LOG.error("Permission denied reading secret: %s", path)
+            # Invalidate so the resolver builds a fresh client and re-authenticates
+            # instead of retrying a dead token until process restart.
+            self._initialized = False
+            if self.config.auth_type == 'kerberos':
+                # The Kerberos token may simply have expired; a new SPNEGO login
+                # is cheap with a live credential cache, so retry once.
+                LOG.warning("Vault rejected the token, re-authenticating with Kerberos: %s", path)
+                if self._client and self._authenticate_kerberos(self._client):
+                    self._initialized = True
+                    try:
+                        secret_data = self._read_secret_data(path)
+                    except Forbidden:
+                        LOG.error("Permission denied reading secret after re-authentication: %s", path)
+                        self._initialized = False
+                        return None
+                    except Exception as e:
+                        LOG.error("Error reading secret from Vault after re-authentication: %s", e)
+                        return None
+                    return self._extract_secret(secret_data, key)
                 LOG.error("Kerberos re-authentication to Vault failed for secret: %s", path)
-                return None
-            try:
-                secret_data = self._read_secret_data(path)
-            except Exception as e:
-                LOG.error("Error reading secret from Vault after re-authentication: %s", e)
-                return None
+            return None
         except Exception as e:
             LOG.error("Error reading secret from Vault: %s", str(e))
             return None
 
+        return self._extract_secret(secret_data, key)
+
+    @staticmethod
+    def _extract_secret(secret_data: dict, key: str) -> Optional[Any]:
         if key:
             result = secret_data.get(key)
             if result is None:
@@ -460,13 +482,16 @@ class VaultSecretResolver:
         self._config = config
 
     def _get_client(self) -> Optional[VaultClient]:
-        """Get or create Vault client; a failed one is dropped so the next resolve retries."""
-        if self._client is None:
-            client = VaultClient(self._config)
-            if not client.is_initialized:
-                return None
-            self._client = client
-        return self._client
+        """Get or create Vault client; failed or self-invalidated clients are
+        dropped so the next resolve re-authenticates."""
+        if self._client is not None and self._client.is_initialized:
+            return self._client
+        self._client = None
+        client = VaultClient(self._config)
+        if not client.is_initialized:
+            return None
+        self._client = client
+        return client
 
     def resolve(self, value: str, prefix: str = '') -> Optional[Any]:
         """
