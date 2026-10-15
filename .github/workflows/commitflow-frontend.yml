@@ -2,15 +2,13 @@ name: Frontend CI
 
 on:
   push:
-    branches:
-    - master
+    branches: ['master', '*_develop', 'develop/**', 'release/**']
   pull_request:
-    branches:
-    - master
+    branches: ['master', '*_develop', 'develop/**', 'release/**']
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@v4

@@ -140,7 +140,8 @@ $(BLD_DIR_ENV)/stamp:
 	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
 	 fi
 	@virtualenv -p $(PYTHON_VER) $(BLD_DIR_ENV)
-	@echo "--- Virtual environment $(BLD_DIR_ENV) ready"
+	@echo '--- Virtual environment $(BLD_DIR_ENV) ready'
+	@$(ENV_PIP) install "setuptools<81"
 	@touch $@
 	@echo '--- Installing PIP_MODULES in virtual-env'
 	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
@@ -148,11 +149,11 @@ $(BLD_DIR_ENV)/stamp:
 	  $(ENV_PIP) install -r $(REQUIREMENT_PPC64LE_FILE); \
 	  echo '--- Finished $(REQUIREMENT_PPC64LE_FILE) into virtual-env'; \
 	 else \
-	  echo '--- Installing $(REQUIREMENT_FILE) into virtual-env via $(ENV_PIP)'; \
-	  $(ENV_PIP) install -r $(REQUIREMENT_FILE); \
-	  echo '--- Finished $(REQUIREMENT_FILE) into virtual-env'; \
+	   echo '--- Installing $(REQUIREMENT_FILE) into virtual-env via $(ENV_PIP)'; \
+	   PIP_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt PIP_BUILD_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt $(ENV_PIP) install -r $(REQUIREMENT_FILE) || exit 1; \
+	   echo '--- Finished $(REQUIREMENT_FILE) into virtual-env'; \
          fi
-	@$(ENV_PIP) install $(NAVOPTAPI_WHL)
+	@PIP_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt PIP_BUILD_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt $(ENV_PIP) install $(NAVOPTAPI_WHL)
 	@echo '--- Finished $(NAVOPTAPI_WHL) into virtual-env'
 	@touch $(REQUIREMENT_DOT_FILE)
 ###################################
