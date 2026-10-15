@@ -15,7 +15,19 @@ function prepare_huedb() {
   flock -x 124
   $HUE_BIN/hue syncdb --noinput
   $HUE_BIN/hue makemigrations --noinput --merge
-  $HUE_BIN/hue migrate
+  # --fake-initial syncs the migration history for legacy databases; on fresh ones it is a no-op
+  $HUE_BIN/hue migrate --fake-initial --noinput || echo "WARN: --fake-initial failed, continuing with regular migration"
+  for attempt in 1 2 3; do
+    if $HUE_BIN/hue migrate --noinput; then
+      break
+    fi
+    if [ $attempt -lt 3 ]; then
+      sleep 5
+    else
+      echo "ERROR: All migration attempts failed" >&2
+      exit 1
+    fi
+  done
   ) 124>$HUE_CONF_DIR/hue.lock
 }
 

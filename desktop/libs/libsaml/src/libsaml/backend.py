@@ -26,15 +26,13 @@ import logging
 from django.contrib.auth import logout as auth_logout
 from django.http import HttpResponse
 from djangosaml2.backends import Saml2Backend as _Saml2Backend
-from djangosaml2.views import logout as saml_logout
-from libsaml import conf
-from libsaml import metrics
-
-from useradmin.models import get_profile, get_default_user_group, UserProfile, User
+from djangosaml2.views import LogoutView
 
 from desktop.auth.backend import force_username_case, rewrite_user
 from desktop.conf import AUTH
-
+from desktop.lib.django_util import nonce_attribute
+from libsaml import conf, metrics
+from useradmin.models import get_default_user_group, get_profile, User, UserProfile
 
 LOG = logging.getLogger()
 
@@ -48,11 +46,9 @@ class SAML2Backend(_Saml2Backend):
   def manages_passwords_externally(cls):
     return True
 
-
   @metrics.saml2_authentication_time
   def authenticate(self, *args, **kwargs):
     return super(SAML2Backend, self).authenticate(*args, **kwargs)
-
 
   def clean_user_main_attribute(self, main_attribute):
     """
@@ -60,8 +56,7 @@ class SAML2Backend(_Saml2Backend):
     """
     return force_username_case(main_attribute)
 
-
-  def is_authorized(self, attributes, attribute_mapping):
+  def is_authorized(self, attributes, attribute_mapping, user=None, session_info=None):
     """Hook to allow custom authorization policies based on user belonging to a list of SAML groups."""
     LOG.debug('is_authorized() attributes = %s' % attributes)
     LOG.debug('is_authorized() attribute_mapping = %s' % attribute_mapping)
@@ -74,8 +69,7 @@ class SAML2Backend(_Saml2Backend):
     user = rewrite_user(user)
     return user
 
-
-  def update_user(self, user, attributes, attribute_mapping, force_save=False):
+  def _update_user(self, user, attributes, attribute_mapping, force_save=False):
     # Do this check up here, because the auth call creates a django user upon first login per user
     is_super = False
     if not UserProfile.objects.filter(creation_method=UserProfile.CreationMethod.EXTERNAL.name).exists():
@@ -83,16 +77,22 @@ class SAML2Backend(_Saml2Backend):
       # become a superuser
       is_super = True
     else:
-      user = self._get_user_by_username(user.username)
-      if user is not None:
+      # Check if user exists, but don't reassign the user variable to avoid None
+      existing_user = self._get_user_by_username(user.username)
+      if existing_user is not None:
         # If the user already exists, we shouldn't change its superuser
         # privileges. However, if there's a naming conflict with a non-external
         # user, we should do the safe thing and turn off superuser privs.
-        existing_profile = get_profile(user)
+        existing_profile = get_profile(existing_user)
         if existing_profile.creation_method == UserProfile.CreationMethod.EXTERNAL.name:
-          is_super = user.is_superuser
+          is_super = existing_user.is_superuser
 
-    user = super(SAML2Backend, self).update_user(user, attributes, attribute_mapping, force_save)
+    # Ensure user is not None before calling parent method
+    if user is None:
+      LOG.error("User object is None, cannot update SAML user")
+      return None
+
+    user = super(SAML2Backend, self)._update_user(user, attributes, attribute_mapping, force_save)
 
     if user is not None and user.is_active:
       user.username = force_username_case(user.username)
@@ -115,22 +115,28 @@ class SAML2Backend(_Saml2Backend):
 
     return None
 
-
   def logout(self, request, next_page=None):
     if conf.LOGOUT_ENABLED.get():
-      response = saml_logout(request)
+      response = LogoutView.as_view()(request)
       auth_logout(request)
       return response
+    elif conf.LOCAL_LOGOUT.get():
+      auth_logout(request)
+      LOG.debug("SAML local logout is called ...")
+      from django.shortcuts import redirect
+      return redirect('/saml2/local_logout')
     elif conf.CDP_LOGOUT_URL.get():
       auth_logout(request)
       redirect_url = conf.get_logout_redirect_url()
-      html = '<html><body onload="document.forms[0].submit()">' \
-             '<form action="%s" method="POST"><input name="logoutRedirect" type="hidden" value="%s"/></form>' \
-             '</body></html>' % (conf.CDP_LOGOUT_URL.get(), redirect_url)
+
+      html = '<html><body>' \
+            '<form action="%s" method="POST">' \
+            '<input name="logoutRedirect" type="hidden" value="%s"></form>' \
+            '<script%s>document.addEventListener("DOMContentLoaded", function() { document.forms[0].submit(); });</script>' \
+            '</body></html>' % (conf.CDP_LOGOUT_URL.get(), redirect_url, nonce_attribute(request))
       return HttpResponse(html)
     else:
       return None
-
 
   def _get_user_by_username(self, username):
     try:
@@ -138,6 +144,6 @@ class SAML2Backend(_Saml2Backend):
         user = User.objects.get(username__iexact=username)
       else:
         user = User.objects.get(username=username)
-    except User.DoesNotExist as e:
+    except User.DoesNotExist:
       user = None
     return user

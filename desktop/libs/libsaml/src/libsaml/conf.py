@@ -15,15 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import sys
 import json
 import logging
+import os
 import subprocess
 
 from django.utils.translation import gettext as _, gettext_lazy as _t
 
-from desktop.lib.conf import Config, coerce_bool, coerce_csv, coerce_password_from_script
+from desktop.lib.conf import coerce_bool, coerce_csv, coerce_password_from_script, Config
 
 LOG = logging.getLogger()
 
@@ -207,7 +206,19 @@ CDP_LOGOUT_URL = Config(
   key="logout_url",
   type=str,
   default="",
-  help=_t("To log users out of magic-sso, CDP control panel use Logout URL"))
+  help=_t("To log users out of control plane, CDP control plane use Logout URL"))
+
+REDIRECT_URL = Config(
+  key="redirect_url",
+  type=str,
+  default="",
+  help=_t("After log users out of control plane, CDP control plane redirect to this URL"))
+
+LOCAL_LOGOUT = Config(
+  key="local_logout",
+  type=coerce_bool,
+  default=True,
+  help=_t("Local logout only logout from Hue, but not IdP SAML"))
 
 
 def get_key_file_password():
@@ -231,16 +242,10 @@ def config_validator(user):
 
 def get_logout_redirect_url():
   # This logic was derived from KNOX.
-  prod_url = "consoleauth.altus.cloudera.com"
-  logout_url = CDP_LOGOUT_URL.get()
-  redirect_url = "https://sso.cloudera.com/logout"
-  if prod_url not in CDP_LOGOUT_URL.get():
+  if REDIRECT_URL.get():
+    redirect_url = REDIRECT_URL.get()
+  elif any(substr in CDP_LOGOUT_URL.get() for substr in ['-dev', '-int', '-stage']):
     redirect_url = "https://sso-stg.cat.cloudera.com/logout"
-  elif ("cdp.cloudera.com/" not in logout_url and "cloudera.com/consoleauth/logout" in logout_url):
-    # Dev/Staging environment
-    redirect_url = "https://sso-stg.cat.cloudera.com/logout"
-  elif ("cdp.cloudera.com/consoleauth/logout" in logout_url):
-    # Production environment
+  else:
     redirect_url = "https://sso.cloudera.com/logout"
-
   return redirect_url
