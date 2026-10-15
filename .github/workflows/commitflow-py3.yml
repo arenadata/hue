@@ -54,8 +54,6 @@ jobs:
         export SKIP_PYTHONDEV_CHECK=true
         export ROOT=$PWD
         make apps
-        npm run webpack-login
-        ./build/env/bin/hue collectstatic --noinput
 
     - name: write test hue.ini
       run: |

@@ -119,8 +119,8 @@ describe('AutocompleteResults.js', () => {
       if (path.length === 3) {
         const tableName = path[1].toLowerCase();
         const columnName = path[2].toLowerCase();
-        const foundColumn = (columnsByTable[tableName] || []).find(column =>
-          column.name.toLowerCase() === columnName
+        const foundColumn = (columnsByTable[tableName] || []).find(
+          column => column.name.toLowerCase() === columnName
         );
         if (foundColumn) {
           return CancellablePromise.resolve({
