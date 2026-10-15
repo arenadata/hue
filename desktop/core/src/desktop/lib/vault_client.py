@@ -21,16 +21,21 @@ Vault client for resolving vault:// references in configuration.
 
 from __future__ import annotations
 
-import logging
-import re
 import os
+import re
+import time
+import base64
+import logging
+import tempfile
+import ipaddress
 import subprocess
-from typing import Optional, Any
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 try:
     import hvac
-    from hvac.exceptions import InvalidPath, Forbidden
     from hvac.api.auth_methods import Kubernetes
+    from hvac.exceptions import Forbidden, InvalidPath
     HAS_HVAC = True
 except ImportError:
     HAS_HVAC = False
@@ -38,6 +43,13 @@ except ImportError:
     InvalidPath = Exception
     Forbidden = Exception
     Kubernetes = None
+
+try:
+    import gssapi
+    HAS_GSSAPI = True
+except ImportError:
+    gssapi = None
+    HAS_GSSAPI = False
 
 from requests import Session
 from requests.adapters import HTTPAdapter
@@ -52,6 +64,65 @@ LOG = logging.getLogger()
 # Pattern for vault references: vault://path/to/secret?key=fieldname
 # or vault://path/to/secret (key=value by default)
 VAULT_REF_PATTERN = re.compile(r'^vault://(?P<path>[^?]+)(\?key=(?P<key>[^&]+))?$')
+
+
+def _default_ccache_path() -> str:
+    """Dedicated credential cache so vault logins never touch the default one."""
+    return os.path.join(tempfile.gettempdir(), 'hue_vault_ccache_%d' % os.getpid())
+
+
+def _response_errors(response) -> Optional[list]:
+    try:
+        return response.json().get('errors')
+    except Exception:
+        return None
+
+
+def _build_spnego_authorization(url, service_principal=None, keytab_path=None, principal=None,
+                                 ccache_path=None) -> Optional[str]:
+    """
+  Build the Authorization header for a single-leg Kerberos SPNEGO login.
+  The target service is HTTP@<host of url> unless service_principal gives a
+  full SPN; credentials come from keytab_path (with its own ccache) or from
+  the environment's default credential cache.
+  """
+    if not HAS_GSSAPI:
+        LOG.error("gssapi library is not installed; Kerberos authentication for Vault is unavailable")
+        return None
+
+    if service_principal:
+        target = gssapi.Name(service_principal, gssapi.NameType.kerberos_principal)
+    else:
+        host = (urlparse(url).hostname or '').lower().rstrip('.')
+        try:
+            is_ip = ipaddress.ip_address(host) is not None
+        except ValueError:
+            is_ip = False
+        if not host or is_ip:
+            LOG.error("Vault URL must use a host name, not an IP, for Kerberos, or kerberos_service_principal must be set: %s", url)
+            return None
+        target = gssapi.Name('HTTP@%s' % host, gssapi.NameType.hostbased_service)
+
+    store = {}
+    if keytab_path:
+        store['client_keytab'] = keytab_path
+        store['ccache'] = 'FILE:%s' % (ccache_path or _default_ccache_path())
+    elif ccache_path:
+        store['ccache'] = 'FILE:%s' % ccache_path
+
+    kwargs = {'usage': 'initiate'}
+    if principal:
+        kwargs['principal'] = gssapi.Name(principal, gssapi.NameType.kerberos_principal)
+    if store:
+        kwargs['store'] = store
+    creds = gssapi.Credentials(**kwargs)
+
+    context = gssapi.SecurityContext(name=target, creds=creds)
+    token = context.step()
+    if not token:
+        LOG.error("Kerberos SPNEGO token was not produced for %s", url)
+        return None
+    return 'Negotiate %s' % base64.b64encode(token).decode('ascii')
 
 
 class VaultClient:
@@ -107,6 +178,7 @@ class VaultClient:
                 'userpass': self._authenticate_userpass,
                 'ldap': self._authenticate_ldap,
                 'kubernetes': self._authenticate_kubernetes,
+                'kerberos': self._authenticate_kerberos,
             }
 
             auth_method = auth_methods.get(self.config.auth_type)
@@ -203,6 +275,45 @@ class VaultClient:
             LOG.error("Kubernetes authentication failed: %s", e)
             return False
 
+    def _authenticate_kerberos(self, client_: hvac.Client) -> bool:
+        """
+    Authenticate through the Kerberos (SPNEGO) auth mount of OpenBao/Vault:
+    a single POST carrying an Authorization: Negotiate header, answered with
+    a client token.
+    """
+        if self.config.krb5_conf_path:
+            os.environ['KRB5_CONFIG'] = self.config.krb5_conf_path
+
+        header = _build_spnego_authorization(
+            url=self.config.url,
+            service_principal=self.config.kerberos_service_principal,
+            keytab_path=self.config.keytab_path,
+            principal=self.config.principal,
+            ccache_path=self.config.ccache_path,
+        )
+        if not header:
+            return False
+
+        mount_point = self.config.auth_mount_point or 'kerberos'
+        body = {'role': self.config.kerberos_role} if self.config.kerberos_role else {}
+        try:
+            response = client_.adapter.post(
+                '/v1/auth/%s/login' % mount_point, json=body, headers={'Authorization': header}
+            )
+        except Exception as e:
+            LOG.error("Kerberos login request to Vault failed: %s", e)
+            return False
+
+        auth = response.get('auth') if isinstance(response, dict) else None
+        if not auth or not auth.get('client_token'):
+            errors = response.get('errors') if isinstance(response, dict) else _response_errors(response)
+            LOG.error("Kerberos login to Vault failed: %s", errors or 'no client token in response')
+            return False
+
+        client_.token = auth['client_token']
+        self._token_expiry = time.time() + auth['lease_duration'] if auth.get('lease_duration') else None
+        return True
+
     def _get_password(self) -> Optional[str]:
         """Get password from config or script."""
         if self.config.password:
@@ -261,6 +372,23 @@ class VaultClient:
     def is_initialized(self):
         return self._initialized and self._client is not None
 
+    def _read_secret_data(self, path: str) -> dict:
+        """Read the raw secret dict from the KV engine."""
+        LOG.debug("Reading secret: path=%s, mount_point=%s, kv_version=%d",
+                  path, self.config.mount_point, int(self.config.kv_engine_version))
+
+        if int(self.config.kv_engine_version) == 1:
+            response = self.client.secrets.kv.v1.read_secret(
+                path=path,
+                mount_point=self.config.mount_point
+            )
+            return response['data']
+        response = self.client.secrets.kv.v2.read_secret_version(
+            path=path,
+            mount_point=self.config.mount_point
+        )
+        return response['data']['data']
+
     def get_secret(self, path: str, key: str = None) -> Optional[Any]:
         """
         Retrieve a secret from Vault.
@@ -284,40 +412,37 @@ class VaultClient:
         path = path.strip('/')
 
         try:
-            LOG.debug("Reading secret: path=%s, mount_point=%s, kv_version=%d",
-                      path, self.config.mount_point, int(self.config.kv_engine_version))
-
-            if int(self.config.kv_engine_version) == 1:
-                response = self.client.secrets.kv.v1.read_secret(
-                    path=path,
-                    mount_point=self.config.mount_point
-                )
-                secret_data = response['data']
-            else:
-                response = self.client.secrets.kv.v2.read_secret_version(
-                    path=path,
-                    mount_point=self.config.mount_point
-                )
-                secret_data = response['data']['data']
-
-            if key:
-                result = secret_data.get(key)
-                if result is None:
-                    LOG.warning("Key '%s' not found in secret. Available keys: %s",
-                                key, list(secret_data.keys()))
-                return result
-            return secret_data
-
+            secret_data = self._read_secret_data(path)
         except InvalidPath:
             LOG.warning("Secret not found at path: %s (mount_point=%s)",
                         path, self.config.mount_point)
             return None
         except Forbidden:
-            LOG.error("Permission denied reading secret: %s", path)
-            return None
+            if self.config.auth_type != 'kerberos':
+                LOG.error("Permission denied reading secret: %s", path)
+                return None
+            # The Kerberos token may simply have expired; a new SPNEGO login
+            # is cheap with a live credential cache, so retry once.
+            LOG.warning("Vault rejected the token, re-authenticating with Kerberos: %s", path)
+            if not self._client or not self._authenticate_kerberos(self._client):
+                LOG.error("Kerberos re-authentication to Vault failed for secret: %s", path)
+                return None
+            try:
+                secret_data = self._read_secret_data(path)
+            except Exception as e:
+                LOG.error("Error reading secret from Vault after re-authentication: %s", e)
+                return None
         except Exception as e:
             LOG.error("Error reading secret from Vault: %s", str(e))
             return None
+
+        if key:
+            result = secret_data.get(key)
+            if result is None:
+                LOG.warning("Key '%s' not found in secret. Available keys: %s",
+                            key, list(secret_data.keys()))
+            return result
+        return secret_data
 
 
 class VaultSecretResolver:
@@ -334,11 +459,14 @@ class VaultSecretResolver:
         self._cache = {}
         self._config = config
 
-
     def _get_client(self) -> Optional[VaultClient]:
-        """Get or create Vault client."""
-        self._client = VaultClient(self._config)
-        return self._client if self._client.is_initialized else None
+        """Get or create Vault client; a failed one is dropped so the next resolve retries."""
+        if self._client is None:
+            client = VaultClient(self._config)
+            if not client.is_initialized:
+                return None
+            self._client = client
+        return self._client
 
     def resolve(self, value: str, prefix: str = '') -> Optional[Any]:
         """
