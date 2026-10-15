@@ -45,7 +45,7 @@ phoenixdb==1.2.1
 prompt-toolkit==3.0.39
 protobuf==3.20.3
 py==1.11.0
-pyarrow==17.0.0
+pyarrow==23.0.1
 pyformance==0.3.2
 pytest==8.1.1
 pytest-django==4.8.0
@@ -69,6 +69,7 @@ SQLAlchemy==1.3.8
 sqlparse==0.6.0
 tablib==0.13.0
 tabulate==0.8.9
+Twisted==26.4.0
 trino==0.329.0
 git+https://github.com/gethue/thrift.git
 thrift-sasl==0.4.3
