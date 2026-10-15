@@ -85,6 +85,10 @@ class TestKerberosLogin:
 
     _, kwargs = fake_gssapi.Credentials.call_args
     assert kwargs['usage'] == 'initiate'
+    # python-gssapi takes the principal as `name`; MagicMock accepts any
+    # keyword, so pin the real one here
+    fake_gssapi.Name.assert_any_call('hue/node.corp@CORP', fake_gssapi.NameType.kerberos_principal)
+    assert kwargs['name'] is fake_gssapi.Name.return_value
     assert kwargs['store'] == {'client_keytab': '/etc/hue.keytab', 'ccache': 'FILE:/var/run/hue/vault_ccache'}
 
   def test_dedicated_ccache_derived_when_keytab_without_ccache(self, fake_gssapi, fake_hvac_client):

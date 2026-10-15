@@ -120,7 +120,7 @@ def _build_spnego_authorization(url, service_principal=None, keytab_path=None, p
 
     kwargs = {'usage': 'initiate'}
     if principal:
-        kwargs['principal'] = gssapi.Name(principal, gssapi.NameType.kerberos_principal)
+        kwargs['name'] = gssapi.Name(principal, gssapi.NameType.kerberos_principal)
     if store:
         kwargs['store'] = store
     creds = gssapi.Credentials(**kwargs)
