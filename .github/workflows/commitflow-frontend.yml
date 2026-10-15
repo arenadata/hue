@@ -2,10 +2,9 @@ name: Frontend CI
 
 on:
   push:
-    branches:
-    - master
-    - '*_develop'
-  pull_request: {}
+    branches: ['master', '*_develop', 'develop/**', 'release/**']
+  pull_request:
+    branches: ['master', '*_develop', 'develop/**', 'release/**']
 
 jobs:
   build:
