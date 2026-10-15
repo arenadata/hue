@@ -4,12 +4,8 @@ on:
   push:
     branches:
     - master
-    - 4.11.0_develop
-  pull_request:
-    branches:
-    - master
-    - 4.11.0_develop
-    - develop
+    - '*_develop'
+  pull_request: {}
 jobs:
   build:
 
