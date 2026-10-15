@@ -972,7 +972,9 @@ class OnePageViewModel {
       if (href) {
         if (href.startsWith('/')) {
           if (window.HUE_BASE_URL && !href.startsWith(window.HUE_BASE_URL)) {
-            page(window.HUE_BASE_URL + href);
+            // the full path must start with the page.js base (HUE_BASE_URL +
+            // '/hue'); page.js prepends the base itself otherwise
+            page(window.HUE_BASE_URL + '/hue' + href);
           } else {
             page(href); // Already includes the base_url
           }

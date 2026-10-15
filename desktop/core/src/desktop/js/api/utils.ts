@@ -20,7 +20,7 @@ import axios, {
   AxiosRequestConfig,
   AxiosResponse,
   AxiosResponseTransformer,
-  CancelToken
+  InternalAxiosRequestConfig
 } from 'axios';
 import qs from 'qs';
 
@@ -65,7 +65,7 @@ const axiosInstance = axios.create({ withCredentials: true });
 let baseUrl = (window as hueWindow).HUE_BASE_URL;
 let bearerToken: string | undefined;
 
-axiosInstance.interceptors.request.use(config => {
+axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (baseUrl) {
     config.baseURL = baseUrl;
   }
@@ -188,9 +188,10 @@ const handleResponse = <T>(
   }
 };
 
-const getCancelToken = (): { cancelToken: CancelToken; cancel: () => void } => {
-  const cancelTokenSource = axios.CancelToken.source();
-  return { cancelToken: cancelTokenSource.token, cancel: cancelTokenSource.cancel };
+// AbortController replaces the axios CancelToken API deprecated in axios 1.x
+const getAbortController = (): { signal: AbortSignal; abort: () => void } => {
+  const controller = new AbortController();
+  return { signal: controller.signal, abort: () => controller.abort() };
 };
 
 export const post = <T, U = unknown>(
@@ -199,14 +200,14 @@ export const post = <T, U = unknown>(
   options?: ApiFetchOptions<T>
 ): CancellablePromise<T> =>
   new CancellablePromise((resolve, reject, onCancel) => {
-    const { cancelToken, cancel } = getCancelToken();
+    const { signal, abort } = getAbortController();
     let completed = false;
 
     const encodeData = options?.qsEncodeData == undefined || options?.qsEncodeData;
 
     axiosInstance
       .post<T & DefaultApiResponse>(url, encodeData ? qs.stringify(data) : data, {
-        cancelToken,
+        signal,
         ...options
       })
       .then(response => {
@@ -228,7 +229,7 @@ export const post = <T, U = unknown>(
 
     onCancel(() => {
       if (!completed) {
-        cancel();
+        abort();
       }
     });
   });
@@ -239,12 +240,12 @@ export const get = <T, U = unknown>(
   options?: ApiFetchOptions<T>
 ): CancellablePromise<T> =>
   new CancellablePromise((resolve, reject, onCancel) => {
-    const { cancelToken, cancel } = getCancelToken();
+    const { signal, abort } = getAbortController();
     let completed = false;
 
     axiosInstance
       .get<T & DefaultApiResponse>(url, {
-        cancelToken,
+        signal,
         params: data
       })
       .then(response => {
@@ -259,7 +260,7 @@ export const get = <T, U = unknown>(
 
     onCancel(() => {
       if (!completed) {
-        cancel();
+        abort();
       }
     });
   });
