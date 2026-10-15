@@ -1,0 +1,5 @@
+# Applies to build isolation of source distributions and to the environment
+# itself. cx-Oracle 8.3.0 ships no cp311 wheel and its setup.py imports
+# pkg_resources, which newer setuptools no longer provides. Hue also imports
+# pkg_resources at runtime (desktop appmanager entry points).
+setuptools<81

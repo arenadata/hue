@@ -4,13 +4,16 @@ on:
   push:
     branches:
     - master
+    - 4.11.0_develop
   pull_request:
     branches:
     - master
+    - 4.11.0_develop
+    - develop
 jobs:
   build:
 
-    runs-on: ${{ (matrix.python-version == '3.10' || matrix.python-version == '3.11') && 'ubuntu-22.04' || 'ubuntu-20.04' }}
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
@@ -50,20 +53,53 @@ jobs:
     - name: compile
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc g++ build-essential python${{ matrix.python-version }}-dev python${{ matrix.python-version }}-venv python${{ matrix.python-version }}-distutils asciidoc rsync curl sudo libkrb5-dev libldap2-dev libsasl2-dev libxml2-dev libxslt-dev  libsasl2-modules-gssapi-mit libsnappy-dev libffi-dev # This should not be needed as some point
-        sudo curl -sL https://bootstrap.pypa.io/get-pip.py | sudo python${{ matrix.python-version }}
-        sudo apt-get install -y python3-setuptools
-        sudo apt-get install -y libncursesw5-dev libgdbm-dev libc6-dev libssl-dev openssl
+        sudo apt-get install -y build-essential asciidoc libkrb5-dev libldap2-dev libsasl2-dev libxslt-dev libsasl2-modules-gssapi-mit libsnappy-dev libgdbm-dev
 
         export PYTHON_VER=python${{ matrix.python-version }}
+        export SKIP_PYTHONDEV_CHECK=true
         export ROOT=$PWD
         make apps
+        npm run webpack-login
+        ./build/env/bin/hue collectstatic --noinput
+
+    - name: write test hue.ini
+      run: |
+        cat > desktop/conf/hue.ini <<'EOF'
+        [desktop]
+
+          [[ozone]]
+            [[[default]]]
+              fs_defaultfs=ofs://localhost:9862
+              webhdfs_url=http://localhost:9778/webhdfs/v1
+
+        [hadoop]
+
+          [[hdfs_clusters]]
+            [[[default]]]
+              fs_defaultfs=hdfs://localhost:8020
+              webhdfs_url=http://localhost:14000/webhdfs/v1
+
+          [[yarn_clusters]]
+            [[[default]]]
+              submit_to=true
+              resourcemanager_api_url=http://localhost:8088
+              history_server_api_url=http://localhost:19888
+
+        [azure]
+
+          [[abfs_clusters]]
+            [[[default]]]
+              fs_defaultfs=abfs://container@account.dfs.core.windows.net
+
+        [beeswax]
+          hive_server_host=localhost
+        EOF
 
     - name: run tests
       run: |
         mkdir -p test-reports  # Ensure the directory exists
         PYTHONWARNINGS=always ./build/env/bin/pytest --html=test-reports/report_${{ matrix.python-version }}.html --self-contained-html
- 
+
     - name: upload pytest report
       uses: actions/upload-artifact@v4
       with:
@@ -71,16 +107,16 @@ jobs:
         path: test-reports
 
     - name: Check and comment if no unit test files are modified
-      if: matrix.python-version == '3.11'
+      if: github.event_name == 'pull_request' && matrix.python-version == '3.11'
       run: |
-        git fetch origin master
-        changed_files=$(git diff --name-only origin/master)
-        
+        git fetch origin ${{ github.base_ref }}
+        changed_files=$(git diff --name-only origin/${{ github.base_ref }})
+
         if echo "$changed_files" | grep -qE '(^test|_test\.py|^tests|_tests\.py|.test)'; then
           echo "✅ Unit test files were modified."
         else
           echo "⚠️ No unit test files modified."
-          
+
           curl -X POST \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -89,10 +125,12 @@ jobs:
         fi
 
     - name: run python lints
+      if: matrix.python-version == '3.11'
       run: |
         PYTHONWARNINGS=always ./build/env/bin/hue runruff check
 
     - name: run documentation lints
+      if: matrix.python-version == '3.11'
       run: |
         curl -O https://dl.google.com/go/go1.23.4.linux-amd64.tar.gz
         tar -xvf go1.23.4.linux-amd64.tar.gz
@@ -106,4 +144,3 @@ jobs:
         # Trigger linting if documentation changes
         ./tools/ci/check_for_website_dead_links.sh docs/docs-site
         # ./tools/ci/check_for_website_dead_links.sh docs/gethue
-

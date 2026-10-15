@@ -4,13 +4,16 @@ on:
   push:
     branches:
     - master
+    - 4.11.0_develop
   pull_request:
     branches:
     - master
+    - 4.11.0_develop
+    - develop
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@v4
