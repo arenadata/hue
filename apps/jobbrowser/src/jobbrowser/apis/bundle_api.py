@@ -15,27 +15,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-import json
 import sys
-
-from liboozie.oozie_api import get_oozie
+import json
+import logging
 
 from jobbrowser.apis.base_api import Api, MockDjangoRequest
-from jobbrowser.apis.workflow_api import _manage_oozie_job, _filter_oozie_jobs
 from jobbrowser.apis.schedule_api import MockGet
+from jobbrowser.apis.workflow_api import _filter_oozie_jobs, _manage_oozie_job
+from liboozie.oozie_api import get_oozie
 
 if sys.version_info[0] > 2:
   from django.utils.translation import gettext as _
 else:
-  from django.utils.translation import ugettext as _
+  from django.utils.translation import gettext as _
 
 LOG = logging.getLogger()
 
 
 try:
   from oozie.conf import OOZIE_JOBS_COUNT
-  from oozie.views.dashboard import get_oozie_job_log, massaged_oozie_jobs_for_json, list_oozie_bundle
+  from oozie.views.dashboard import get_oozie_job_log, list_oozie_bundle, massaged_oozie_jobs_for_json
 except Exception as e:
   LOG.exception('Some application are not enabled: %s' % e)
 
@@ -54,7 +53,7 @@ class BundleApi(Api):
     jobs = oozie_api.get_bundles(**kwargs)
 
     return {
-      'apps':[{
+      'apps': [{
         'id': app['id'],
         'name': app['appName'],
         'status': app['status'],
@@ -69,7 +68,6 @@ class BundleApi(Api):
       } for app in massaged_oozie_jobs_for_json(jobs.jobs, self.user)['jobs']],
       'total': jobs.total
     }
-
 
   def app(self, appid):
     request = MockDjangoRequest(self.user, get=MockGet())
@@ -95,17 +93,14 @@ class BundleApi(Api):
 
     return common
 
-
   def action(self, app_ids, action):
     return _manage_oozie_job(self.user, action, app_ids)
-
 
   def logs(self, appid, app_type, log_name=None, is_embeddable=False):
     request = MockDjangoRequest(self.user)
     data = get_oozie_job_log(request, job_id=appid)
 
     return {'logs': json.loads(data.content)['log']}
-
 
   def profile(self, appid, app_type, app_property, app_filters):
     if app_property == 'xml':
@@ -129,4 +124,4 @@ class BundleApi(Api):
     elif status == 'SUCCEEDED':
       return 'SUCCEEDED'
     else:
-      return 'FAILED' # DONEWITHERROR, KILLED, FAILED
+      return 'FAILED'  # DONEWITHERROR, KILLED, FAILED

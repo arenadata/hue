@@ -253,6 +253,14 @@ TEMPLATES = [
     ],
     'NAME': 'django',
     'APP_DIRS': True,
+    'OPTIONS': {
+      'context_processors': [
+        'django.template.context_processors.debug',
+        'django.template.context_processors.request',
+        'django.contrib.auth.context_processors.auth',
+        'django.contrib.messages.context_processors.messages',
+      ],
+    },
   },
 ]
 
@@ -498,8 +506,14 @@ if desktop.conf.KNOX.KNOX_PROXYHOSTS.get():  # The hosts provided here don't hav
   else:
     TRUSTED_ORIGINS += desktop.conf.KNOX.KNOX_PROXYHOSTS.get()
 
+CSRF_TRUSTED_ORIGINS = []
 if TRUSTED_ORIGINS:
-  CSRF_TRUSTED_ORIGINS = TRUSTED_ORIGINS
+  for origin in TRUSTED_ORIGINS:
+    if 'http://' in origin or 'https://' in origin:
+      CSRF_TRUSTED_ORIGINS.append(origin)
+    else:
+      CSRF_TRUSTED_ORIGINS.append('http://%s' % origin)
+      CSRF_TRUSTED_ORIGINS.append('https://%s' % origin)
 
 SECURE_HSTS_SECONDS = desktop.conf.SECURE_HSTS_SECONDS.get()
 SECURE_HSTS_INCLUDE_SUBDOMAINS = desktop.conf.SECURE_HSTS_INCLUDE_SUBDOMAINS.get()
@@ -573,10 +587,13 @@ LOGIN_URL = '/hue/accounts/login'
 # SAML
 SAML_AUTHENTICATION = 'libsaml.backend.SAML2Backend' in AUTHENTICATION_BACKENDS
 if SAML_AUTHENTICATION:
-  from libsaml.saml_settings import *
+  from libsaml.saml_settings import *  # noqa: F403
   INSTALLED_APPS.append('libsaml')
+  INSTALLED_APPS.append('djangosaml2')
   LOGIN_URL = '/saml2/login/'
   SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+  # Required middleware for djangosaml2 1.9.3+
+  MIDDLEWARE.append('djangosaml2.middleware.SamlSessionMiddleware')
 
 # Middleware classes.
 for middleware in desktop.conf.MIDDLEWARE.get():

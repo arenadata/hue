@@ -64,6 +64,14 @@ const config = {
         enforce: 'pre',
         use: ['source-map-loader']
       },
+      // Remove hardcoded references to source map files in third party mjs-files
+      // since those files will be missing in our builds.
+      {
+        test: /\.mjs$/,
+        include: /node_modules/,
+        enforce: 'post',
+        loader: 'strip-sourcemap-loader'
+      },
       {
         test: /\.scss$/,
         exclude: /node_modules/,
@@ -144,6 +152,10 @@ const config = {
     modules: ['node_modules', 'js'],
     alias: {
       bootstrap: __dirname + '/node_modules/bootstrap-2.3.2/js',
+      // The "browser" entry of page inlines its own copy of path-to-regexp, which bypasses the
+      // patched version pinned through the package.json overrides. Point at the CommonJS entry
+      // so the dependency is resolved from node_modules instead.
+      page$: __dirname + '/node_modules/page/index.js',
       vue$: __dirname + '/node_modules/vue/dist/vue.esm-browser.prod.js'
     }
   }

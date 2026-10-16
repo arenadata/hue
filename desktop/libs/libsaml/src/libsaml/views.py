@@ -14,39 +14,38 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.urls import reverse
+from django.utils.html import escape
+from djangosaml2.views import AssertionConsumerServiceView, EchoAttributesView, LoginView, LogoutView, MetadataView
 
-from djangosaml2.views import login, echo_attributes, metadata,\
-                              assertion_consumer_service, logout_service
+from desktop.lib.django_util import render
+
+LoginView.dispatch.login_notrequired = True
+EchoAttributesView.dispatch.login_notrequired = True
+MetadataView.dispatch.login_notrequired = True
+LogoutView.dispatch.login_notrequired = True
+AssertionConsumerServiceView.dispatch.login_notrequired = True
 
 try:
-  from djangosaml2.views import logout_service_post
+  from djangosaml2.views import LogoutServicePostView
+
+  LogoutServicePostView.dispatch.login_notrequired = True
 except ImportError:
   # We are on an older version of djangosaml2
-  logout_service_post = None
-
-import libsaml.conf
+  pass
 
 
-__all__ = ['login', 'echo_attributes', 'assertion_consumer_service', 'metadata']
+def local_logout(request, next_page=None):
+  """
+  Local logout: clears Django session only, not the SAML session.
+  Then presents a button to redirect to SAML login.
+  """
+  next_path = request.GET.get("next", "/")
+  login_url = f"{reverse('saml2_login')}?next={escape(next_path)}"
+
+  return render('logged_out.mako', request, {
+    'login_url': login_url,
+  })
 
 
-if logout_service_post is None:
-  _assertion_consumer_service = assertion_consumer_service
-
-  @require_POST
-  @csrf_exempt
-  def assertion_consumer_service(request, config_loader_path=None, attribute_mapping=None, create_unknown_user=None):
-    username_source = libsaml.conf.USERNAME_SOURCE.get().lower()
-    return _assertion_consumer_service(request, config_loader_path, attribute_mapping, create_unknown_user, username_source)
-
-
-setattr(logout_service, 'login_notrequired', True)
-setattr(login, 'login_notrequired', True)
-setattr(echo_attributes, 'login_notrequired', True)
-setattr(assertion_consumer_service, 'login_notrequired', True)
-setattr(metadata, 'login_notrequired', True)
-
-if logout_service_post is not None:
-  setattr(logout_service_post, 'login_notrequired', True)
+setattr(local_logout, 'login_notrequired', True)
