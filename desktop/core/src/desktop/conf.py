@@ -3006,7 +3006,7 @@ VAULT = ConfigSection(
       key='auth_type',
       default='token',
       type=str,
-      help='Authentication type: token, userpass, ldap, kubernetes'
+      help='Authentication type: token, userpass, ldap, kubernetes, kerberos'
     ),
     NAMESPACE=Config(
       key='namespace',
@@ -3082,6 +3082,42 @@ VAULT = ConfigSection(
       help='Path to Kubernetes service account JWT token'
     ),
 
+    # Kerberos (SPNEGO) authentication
+    KEYTAB_PATH=Config(
+      key='keytab_path',
+      default=None,
+      help='Path to a Kerberos keytab for the vault login principal. Without it the default '
+           'credential cache (KRB5CCNAME) is used.'
+    ),
+    PRINCIPAL=Config(
+      key='principal',
+      default=None,
+      help='Kerberos principal to authenticate with, e.g. hue/host.example.com@REALM. Required with keytab_path.'
+    ),
+    KRB5_CONF_PATH=Config(
+      key='krb5_conf_path',
+      default=None,
+      help='Path to krb5.conf; defaults to the system one'
+    ),
+    CCACHE_PATH=Config(
+      key='ccache_path',
+      default=None,
+      help='Dedicated credential cache for the vault login; derived automatically when a keytab is used'
+    ),
+    KERBEROS_SERVICE_PRINCIPAL=Config(
+      key='kerberos_service_principal',
+      default=None,
+      help='Service principal of the Vault/OpenBao server. Defaults to HTTP/<host of url>, resolved '
+           'through krb5.conf realm mappings. Set it when the URL host is not the name the SPN is '
+           'registered for (CNAME, load balancer).'
+    ),
+    KERBEROS_ROLE=Config(
+      key='kerberos_role',
+      default=None,
+      help='Name of the auth/kerberos role to log in with when the server matches roles; leave empty '
+           'when exactly one role is bound to the principal or the server uses LDAP mode.'
+    ),
+
     # SSL settings
     VERIFY_SSL=Config(
       key='verify',
@@ -3114,6 +3150,7 @@ VAULT = ConfigSection(
     ),
   )
 )
+
 
 def is_ofs_enabled():
   return ('default' in list(OZONE.keys()) and OZONE['default'].get_raw() and OZONE['default'].WEBHDFS_URL.get())

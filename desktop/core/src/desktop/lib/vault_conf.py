@@ -1,8 +1,16 @@
 import logging
-from typing import Optional, Dict, Any, Union
+import ipaddress
 from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Union
+from urllib.parse import urlparse
 
 LOG = logging.getLogger()
+
+
+def vault_url_host(url: str) -> str:
+    """Host of url lower-cased without the trailing dot, as SPNEGO clients
+    derive the service name; empty when url has no host name."""
+    return (urlparse(url).hostname or '').lower().rstrip('.')
 
 
 @dataclass
@@ -15,7 +23,7 @@ class VaultConfig:
     # Connection settings
     url: str
     namespace: Optional[str] = None
-    auth_type: str = "token"  # token, userpass, ldap,  kubernetes
+    auth_type: str = "token"  # token, userpass, ldap, kubernetes, kerberos
 
     # KV engine settings
     mount_point: str = "secret"
@@ -34,6 +42,14 @@ class VaultConfig:
     # Kubernetes authentication
     kubernetes_role: Optional[str] = None
     kubernetes_jwt_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+    # Kerberos (SPNEGO) authentication
+    keytab_path: Optional[str] = None
+    principal: Optional[str] = None
+    krb5_conf_path: Optional[str] = None
+    ccache_path: Optional[str] = None
+    kerberos_service_principal: Optional[str] = None
+    kerberos_role: Optional[str] = None
 
     # SSL settings
     verify: Optional[Union[bool, str]] = None
@@ -86,6 +102,23 @@ class VaultConfig:
             if not self.kubernetes_role:
                 raise ValueError("kubernetes_role is required for Kubernetes authentication")
 
+        elif self.auth_type == "kerberos":
+            if self.keytab_path and not self.principal:
+                raise ValueError("Principal is required for kerberos authentication with a keytab")
+            if not self.kerberos_service_principal:
+                host = vault_url_host(self.url)
+                if not host:
+                    raise ValueError("Vault URL must have a host name for kerberos authentication")
+                try:
+                    is_ip = ipaddress.ip_address(host) is not None
+                except ValueError:
+                    is_ip = False
+                if is_ip:
+                    raise ValueError(
+                        "Vault URL must use a host name, not an IP, for kerberos authentication "
+                        "(a ticket cannot be issued to an IP); or set kerberos_service_principal"
+                    )
+
         if int(self.kv_engine_version) not in [1, 2]:
             raise ValueError("kv_engine_version must be 1 or 2")
 
@@ -109,7 +142,7 @@ def init_vault_config(vault_config: dict) -> VaultConfig:
         Initialized VaultConfig instance
     """
     global VAULT_CONFIG
-    
+
     if not VAULT_CONFIG:
         VAULT_CONFIG = VaultConfig(**vault_config)
 
