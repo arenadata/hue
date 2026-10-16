@@ -32,7 +32,7 @@ from desktop.auth.backend import force_username_case, rewrite_user
 from desktop.conf import AUTH
 from desktop.lib.django_util import nonce_attribute
 from libsaml import conf, metrics
-from useradmin.models import get_default_user_group, get_profile, User, UserProfile
+from useradmin.models import User, UserProfile, get_default_user_group, get_profile
 
 LOG = logging.getLogger()
 

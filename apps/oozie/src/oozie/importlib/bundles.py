@@ -15,12 +15,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 import json
 import logging
-from lxml import etree
-import sys
 
-from oozie.models import Coordinator, BundledCoordinator
+from lxml import etree
+
+from oozie.models import BundledCoordinator, Coordinator
 from oozie.utils import oozie_to_django_datetime
 
 if sys.version_info[0] > 2:

@@ -15,14 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import json
 import logging
-import os
 import subprocess
 
 from django.utils.translation import gettext as _, gettext_lazy as _t
 
-from desktop.lib.conf import coerce_bool, coerce_csv, coerce_password_from_script, Config
+from desktop.lib.conf import Config, coerce_bool, coerce_csv, coerce_password_from_script
 
 LOG = logging.getLogger()
 
