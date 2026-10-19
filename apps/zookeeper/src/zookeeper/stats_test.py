@@ -41,10 +41,10 @@ def _response(body):
 MNTR_BODY = {
     'command': 'mntr',
     'error': None,
-    'zk_version': '3.9.5-abc, built on 2026-01-01',
-    'zk_server_state': 'leader',
-    'zk_znode_count': 5,
-    'zk_avg_latency': 12,
+    'version': '3.9.5-abc, built on 2026-01-01',
+    'server_state': 'leader',
+    'znode_count': 5,
+    'avg_latency': 12,
 }
 
 STAT_BODY = {
@@ -111,7 +111,9 @@ class TestAdminWiring(object):
 
 class TestAdminGetStats(object):
 
-  def test_mntr_strips_envelope(self):
+  def test_mntr_prefixes_keys_and_times_out(self):
+    # The admin server serves mntr keys unprefixed (the 4lw writer adds zk_
+    # only to its text output); Hue's UI reads the zk_* names.
     with patch('zookeeper.stats.ZooKeeperHttpClient') as client_class:
       zks = ZooKeeperStats('zk1.example', '2181', admin_port=8080)
       client_class.return_value.execute.return_value = _response(MNTR_BODY)
@@ -122,7 +124,7 @@ class TestAdminGetStats(object):
           'zk_avg_latency': 12,
       }
       client_class.return_value.execute.assert_called_once_with(
-          'GET', 'commands/mntr', headers={'Accept': 'application/json'})
+          'GET', 'commands/mntr', headers={'Accept': 'application/json'}, timeout=5)
 
   def test_mntr_error_falls_back_to_stat(self):
     with patch('zookeeper.stats.ZooKeeperHttpClient') as client_class:
@@ -167,6 +169,15 @@ class TestAdminGetStats(object):
       zks = ZooKeeperStats('zk1.example', '2181', admin_port=8080)
       client_class.return_value.execute.side_effect = _rest_exception(500)
       assert zks.get_stats() == {}
+
+  def test_non_json_response_degrades_to_empty(self):
+    with patch('zookeeper.stats.ZooKeeperHttpClient') as client_class:
+      zks = ZooKeeperStats('zk1.example', '2181', admin_port=8080)
+      response = MagicMock()
+      response.json.side_effect = ValueError('not json')
+      client_class.return_value.execute.return_value = response
+      assert zks.get_stats() == {}
+      assert zks.get_clients() == []
 
 
 class TestAdminGetClients(object):

@@ -98,7 +98,7 @@ def view(request, id):
   leader, followers = _group_stats_by_role(overview)
 
   return render('view.mako', request, {
-      'cluster': cluster, 'all_stats': stats, 'leader': leader, 'followers': followers,
+      'cluster': cluster, 'all_stats': overview, 'leader': leader, 'followers': followers,
       'clusters': CLUSTERS.get(),
       'is_embeddable': request.GET.get('is_embeddable', False),
   })

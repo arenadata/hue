@@ -38,7 +38,7 @@ CLUSTERS = UnspecifiedConfigSection(
       ),
       ADMIN_PORT=Config(
           "admin_port",
-          help="Port of the admin server on each ensemble member. When set, stats and clients are read from its /commands HTTP endpoint",
+          help="Admin server port on each member; when set, stats/clients use its /commands endpoint over plain HTTP",
           default=None,
           type=int,
       ),

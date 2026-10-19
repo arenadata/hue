@@ -56,8 +56,11 @@ class AdminServerStats(object):
 
   ENVELOPE_KEYS = ('command', 'error')
 
-  def __init__(self, url, security_enabled=False, ssl_cert_ca_verify=False):
+  def __init__(self, url, security_enabled=False, ssl_cert_ca_verify=False, timeout=5):
     self._url = url
+    self._timeout = timeout
+    # The auth and verify flags mutate the requests session cached per netloc,
+    # so the admin server must not share its host:port with the REST gateway.
     self._client = ZooKeeperHttpClient(url, logger=LOG)
     if security_enabled:
       self._client.set_kerberos_auth()
@@ -66,7 +69,9 @@ class AdminServerStats(object):
   def get_stats(self):
     body = self._run_command('mntr')
     if body is not None and not body.get('error'):
-      return {k: v for k, v in body.items() if k not in AdminServerStats.ENVELOPE_KEYS}
+      # The admin server serves mntr keys unprefixed; the 4lw text output
+      # (and everything in Hue that reads it) carries the zk_ prefix.
+      return {'zk_' + k: v for k, v in body.items() if k not in AdminServerStats.ENVELOPE_KEYS}
     body = self._run_command('stat')
     if body is None or body.get('error'):
       return {}
@@ -82,10 +87,15 @@ class AdminServerStats(object):
     """Run a 4lw command over HTTP and return the JSON body, or None on error."""
     try:
       resp = self._client.execute('GET', 'commands/%s' % command,
-                                  headers={'Accept': 'application/json'})
+                                  headers={'Accept': 'application/json'},
+                                  timeout=self._timeout)
       return resp.json()
     except RestException as e:
       self._log_command_error(command, e)
+      return None
+    except ValueError as e:
+      LOG.error('Problem parsing the %s response of admin server %s : %s'
+                % (command, self._url, e))
       return None
 
   def _log_command_error(self, command, e):

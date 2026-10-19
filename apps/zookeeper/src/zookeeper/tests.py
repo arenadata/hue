@@ -20,7 +20,7 @@ from builtins import object
 
 from zookeeper import stats
 from zookeeper.conf import CLUSTERS
-from zookeeper.views import _get_global_overview
+from zookeeper.views import _get_global_overview, _group_stats_by_role
 
 
 class MockZooKeeperStats(object):
@@ -61,6 +61,12 @@ class TestMockedZooKeeper(ZooKeeperMockBase):
     finally:
       finish()
 
+    finish = CLUSTERS.set_for_testing({'default': {'localhost:2181,localhost:2182': {}}})
+    try:
+      _get_global_overview()
+    finally:
+      finish()
+
   def test_cluster_options_reach_stats_client(self):
     finish = CLUSTERS.set_for_testing({'default': {
         'host_ports': 'zk1.example:2181,zk2.example:2181',
@@ -79,8 +85,11 @@ class TestMockedZooKeeper(ZooKeeperMockBase):
         {'admin_port': 8080, 'security_enabled': True, 'ssl_cert_ca_verify': False},
     ]
 
-    finish = CLUSTERS.set_for_testing({'default': {'localhost:2181,localhost:2182': {}}})
-    try:
-      _get_global_overview()
-    finally:
-      finish()
+  def test_group_stats_by_role_reads_prefixed_admin_keys(self):
+    overview = {
+        'zk1.example:2181': {'zk_server_state': 'leader'},
+        'zk2.example:2181': {'zk_server_state': 'follower'},
+    }
+    leader, followers = _group_stats_by_role(overview)
+    assert leader['host'] == 'zk1.example:2181'
+    assert [follower['host'] for follower in followers] == ['zk2.example:2181']
