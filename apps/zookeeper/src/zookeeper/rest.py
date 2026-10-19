@@ -23,7 +23,7 @@ from django.utils.encoding import iri_to_uri
 
 from desktop.lib.rest.http_client import HttpClient, RestException
 
-LOG = logging.getLogger()
+LOG = logging.getLogger(__name__)
 
 
 class ZooKeeperHttpClient(HttpClient):
@@ -65,7 +65,6 @@ class ZooKeeper(object):
     pass
 
   def __init__(self, uri='http://localhost:9998', security_enabled=False, ssl_cert_ca_verify=False):
-    self._base = uri
     self._session = None
     self._client = ZooKeeperHttpClient(uri, logger=LOG)
     if security_enabled:
@@ -184,7 +183,9 @@ class ZooKeeper(object):
     except RestException as e:
       if e.code == 409:
         raise ZooKeeper.ZNodeExists(path)
-      elif e.code == 401:
+      elif e.code == 401 and params and 'session' in params:
+        # The gateway answers 401 for an unknown session; a bare 401 elsewhere
+        # is an authentication failure and should not masquerade as this.
         raise ZooKeeper.InvalidSession(path)
       raise
 

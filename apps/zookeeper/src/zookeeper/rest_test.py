@@ -64,7 +64,7 @@ class TestUrlBuilding(object):
     client_class.return_value.execute.assert_called_once_with(
         'GET', 'znodes/v1/', params=None, headers={'Accept': 'application/json'})
 
-  def test_get_quotes_path(self):
+  def test_get_passes_raw_path_to_client(self):
     zk, client_class = _make_zk()
     zk.get('/parent/child name')
     assert client_class.return_value.execute.call_args[0][1] == 'znodes/v1/parent/child name'
@@ -142,11 +142,18 @@ class TestErrorMapping(object):
     with pytest.raises(ZooKeeper.WrongVersion):
       zk.delete('/parent/node', version=1)
 
-  def test_post_401_raises_invalid_session(self):
+  def test_post_401_without_session_reraises(self):
     zk, client_class = _make_zk()
     client_class.return_value.execute.side_effect = _rest_exception(401)
-    with pytest.raises(ZooKeeper.InvalidSession):
+    with pytest.raises(RestException):
       zk.create('/parent/node')
+
+  def test_ephemeral_create_401_raises_invalid_session(self):
+    zk, client_class = _make_zk()
+    zk.start_session(id='123')
+    client_class.return_value.execute.side_effect = _rest_exception(401)
+    with pytest.raises(ZooKeeper.InvalidSession):
+      zk.create('/parent/node', ephemeral=True)
 
   def test_get_500_reraises_rest_exception(self):
     zk, client_class = _make_zk()
@@ -179,3 +186,38 @@ class TestClientMakeUrl(object):
     client = ZooKeeperHttpClient('http://zk.example:9998')
     assert client._make_url('znodes/v1/', {'view': 'children'}) == \
         'http://zk.example:9998/znodes/v1/?view=children'
+
+
+class TestUrlPipeline(object):
+  """Pin the full execute() pipeline: pre-quote in execute, verbatim path in
+  ZooKeeperHttpClient._make_url, single encoding through iri_to_uri."""
+
+  def _url_for(self, method, path, params=None):
+    with patch('desktop.lib.rest.http_client.get_request_session') as get_session:
+      session = MagicMock()
+      response = MagicMock()
+      response.status_code = 200
+      getattr(session, method.lower()).return_value = response
+      get_session.return_value.get.return_value = session
+      client = ZooKeeperHttpClient('http://zk.example:9998')
+      client.execute(method, path, params=params)
+    return getattr(session, method.lower()).call_args[0][0]
+
+  def test_root_get_keeps_trailing_slash(self):
+    assert self._url_for('GET', 'znodes/v1/') == 'http://zk.example:9998/znodes/v1/'
+
+  def test_space_in_path_quoted_once(self):
+    assert self._url_for('GET', 'znodes/v1/parent/child name') == \
+        'http://zk.example:9998/znodes/v1/parent/child%20name'
+
+  def test_percent_in_path_quoted_once(self):
+    assert self._url_for('GET', 'znodes/v1/50%') == 'http://zk.example:9998/znodes/v1/50%25'
+
+  def test_session_create_url_with_params(self):
+    assert self._url_for('POST', 'sessions/v1/', params={'op': 'create', 'expire': 5}) == \
+        'http://zk.example:9998/sessions/v1/?op=create&expire=5'
+
+  def test_create_name_with_space_encoded(self):
+    assert self._url_for('POST', 'znodes/v1/parent',
+                         params={'op': 'create', 'name': 'child name'}) == \
+        'http://zk.example:9998/znodes/v1/parent?op=create&name=child+name'
