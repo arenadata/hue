@@ -32,7 +32,7 @@ from zookeeper import settings, stats
 from zookeeper.conf import CLUSTERS
 from zookeeper.forms import CreateZNodeForm, EditZNodeForm
 from zookeeper.rest import ZooKeeper
-from zookeeper.utils import get_cluster_or_404
+from zookeeper.utils import get_client, get_cluster_or_404
 
 
 def _get_global_overview():
@@ -115,7 +115,7 @@ def clients(request, id, host):
 
 def tree(request, id, path):
   cluster = get_cluster_or_404(id)
-  zk = ZooKeeper(cluster['rest_url'])
+  zk = get_client(cluster)
 
   znode = zk.get(path)
   children = sorted(zk.get_children_paths(path))
@@ -141,7 +141,7 @@ def delete(request, id, path):
 
   redir = {}
   if request.method == 'POST':
-    zk = ZooKeeper(cluster['rest_url'])
+    zk = get_client(cluster)
     try:
       zk.recursive_delete(path)
     except ZooKeeper.NotFound:
@@ -161,7 +161,7 @@ def create(request, id, path):
   if request.method == 'POST':
     form = CreateZNodeForm(request.POST)
     if form.is_valid():
-      zk = ZooKeeper(cluster['rest_url'])
+      zk = get_client(cluster)
 
       full_path = ("%s/%s" % (path, form.cleaned_data['name'])).replace('//', '/')
 
@@ -170,12 +170,18 @@ def create(request, id, path):
   else:
     form = CreateZNodeForm()
 
-  return render('create.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })
+  return render('create.mako', request, {
+      'cluster': cluster,
+      'path': path,
+      'form': form,
+      'clusters': CLUSTERS.get(),
+      'is_embeddable': request.GET.get('is_embeddable', False),
+  })
 
 
 def edit_as_base64(request, id, path):
   cluster = get_cluster_or_404(id)
-  zk = ZooKeeper(cluster['rest_url'])
+  zk = get_client(cluster)
   node = zk.get(path)
 
   if request.method == 'POST':
@@ -193,12 +199,18 @@ def edit_as_base64(request, id, path):
       data=node.get('data64', ''),
       version=node.get('version', '-1')))
 
-  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })
+  return render('edit.mako', request, {
+      'cluster': cluster,
+      'path': path,
+      'form': form,
+      'clusters': CLUSTERS.get(),
+      'is_embeddable': request.GET.get('is_embeddable', False),
+  })
 
 
 def edit_as_text(request, id, path):
   cluster = get_cluster_or_404(id)
-  zk = ZooKeeper(cluster['rest_url'])
+  zk = get_client(cluster)
   node = zk.get(path)
 
   if request.method == 'POST':
@@ -210,6 +222,14 @@ def edit_as_text(request, id, path):
 
     return tree(request, id, path)
   else:
-    form = EditZNodeForm(dict(data=node.get('data64', '').decode('base64').strip(), version=node.get('version', '-1')))
+    form = EditZNodeForm(dict(
+        data=node.get('data64', '').decode('base64').strip(),
+        version=node.get('version', '-1')))
 
-  return render('edit.mako', request, {'cluster': cluster, 'path': path, 'form': form, 'clusters': CLUSTERS.get(), 'is_embeddable': request.GET.get('is_embeddable', False), })
+  return render('edit.mako', request, {
+      'cluster': cluster,
+      'path': path,
+      'form': form,
+      'clusters': CLUSTERS.get(),
+      'is_embeddable': request.GET.get('is_embeddable', False),
+  })
