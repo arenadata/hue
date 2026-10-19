@@ -36,6 +36,12 @@ CLUSTERS = UnspecifiedConfigSection(
           default="http://localhost:9998",
           type=str,
       ),
+      ADMIN_PORT=Config(
+          "admin_port",
+          help="Port of the admin server on each ensemble member. When set, stats and clients are read from its /commands HTTP endpoint",
+          default=None,
+          type=int,
+      ),
       SECURITY_ENABLED=Config(
           "security_enabled",
           help="Is the REST service running with Kerberos (SPNEGO) authentication",

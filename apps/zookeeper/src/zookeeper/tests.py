@@ -25,8 +25,10 @@ from zookeeper.views import _get_global_overview
 
 class MockZooKeeperStats(object):
 
-  def __init__(self, host, port):
-    pass
+  calls = []
+
+  def __init__(self, host, port, **kwargs):
+    MockZooKeeperStats.calls.append(kwargs)
 
   def get_stats(self):
     return {}
@@ -41,6 +43,7 @@ class ZooKeeperMockBase(object):
       stats.OriginalZooKeeperApi = stats.ZooKeeperStats
 
     stats.ZooKeeperStats = MockZooKeeperStats
+    MockZooKeeperStats.calls = []
 
   def teardown_method(self):
     stats.ZooKeeperStats = stats.OriginalZooKeeperApi
@@ -57,6 +60,24 @@ class TestMockedZooKeeper(ZooKeeperMockBase):
 
     finally:
       finish()
+
+  def test_cluster_options_reach_stats_client(self):
+    finish = CLUSTERS.set_for_testing({'default': {
+        'host_ports': 'zk1.example:2181,zk2.example:2181',
+        'admin_port': 8080,
+        'security_enabled': True,
+    }})
+
+    try:
+      _get_global_overview()
+
+    finally:
+      finish()
+
+    assert MockZooKeeperStats.calls == [
+        {'admin_port': 8080, 'security_enabled': True, 'ssl_cert_ca_verify': False},
+        {'admin_port': 8080, 'security_enabled': True, 'ssl_cert_ca_verify': False},
+    ]
 
     finish = CLUSTERS.set_for_testing({'default': {'localhost:2181,localhost:2182': {}}})
     try:

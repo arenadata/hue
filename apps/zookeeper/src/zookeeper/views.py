@@ -37,16 +37,28 @@ from zookeeper.utils import get_client, get_cluster_or_404
 
 def _get_global_overview():
   clusters = CLUSTERS.get()
-  return dict([(c, _get_overview(clusters[c].HOST_PORTS.get())) for c in clusters])
+  return {name: _get_overview(_cluster_options(cluster)) for name, cluster in clusters.items()}
 
 
-def _get_overview(host_ports):
+def _cluster_options(cluster):
+  return {
+      'host_ports': cluster.HOST_PORTS.get(),
+      'admin_port': cluster.ADMIN_PORT.get(),
+      'security_enabled': cluster.SECURITY_ENABLED.get(),
+      'ssl_cert_ca_verify': cluster.SSL_CERT_CA_VERIFY.get(),
+  }
+
+
+def _get_overview(options):
   zstats = {}
 
-  for host_port in host_ports.split(','):
+  for host_port in options['host_ports'].split(','):
     host, port = list(map(str.strip, host_port.split(':')))
 
-    zks = stats.ZooKeeperStats(host, port)
+    zks = stats.ZooKeeperStats(host, port,
+                               admin_port=options['admin_port'],
+                               security_enabled=options['security_enabled'],
+                               ssl_cert_ca_verify=options['ssl_cert_ca_verify'])
     zstats[host_port] = zks.get_stats() or {}
 
   return zstats
@@ -82,8 +94,8 @@ def index(request):
 def view(request, id):
   cluster = get_cluster_or_404(id)
 
-  stats = _get_overview(cluster['host_ports'])
-  leader, followers = _group_stats_by_role(stats)
+  overview = _get_overview(cluster)
+  leader, followers = _group_stats_by_role(overview)
 
   return render('view.mako', request, {
       'cluster': cluster, 'all_stats': stats, 'leader': leader, 'followers': followers,
@@ -100,7 +112,10 @@ def clients(request, id, host):
     raise Http404
 
   host, port = parts
-  zks = stats.ZooKeeperStats(host, port)
+  zks = stats.ZooKeeperStats(host, port,
+                             admin_port=cluster['admin_port'],
+                             security_enabled=cluster['security_enabled'],
+                             ssl_cert_ca_verify=cluster['ssl_cert_ca_verify'])
   clients = zks.get_clients()
 
   return render('clients.mako', request, {

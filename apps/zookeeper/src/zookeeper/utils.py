@@ -29,12 +29,13 @@ def get_cluster_or_404(id):
     raise Http404()
 
   cluster = {
-    'id': id,
-    'nice_name': id,
-    'host_ports': cluster.HOST_PORTS.get(),
-    'rest_url': cluster.REST_URL.get(),
-    'security_enabled': cluster.SECURITY_ENABLED.get(),
-    'ssl_cert_ca_verify': cluster.SSL_CERT_CA_VERIFY.get(),
+      'id': id,
+      'nice_name': id,
+      'host_ports': cluster.HOST_PORTS.get(),
+      'rest_url': cluster.REST_URL.get(),
+      'admin_port': cluster.ADMIN_PORT.get(),
+      'security_enabled': cluster.SECURITY_ENABLED.get(),
+      'ssl_cert_ca_verify': cluster.SSL_CERT_CA_VERIFY.get(),
   }
 
   return cluster
