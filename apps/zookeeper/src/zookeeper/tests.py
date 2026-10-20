@@ -20,17 +20,18 @@ from builtins import object
 
 from zookeeper import stats
 from zookeeper.conf import CLUSTERS
-from zookeeper.views import _get_global_overview
+from zookeeper.views import _get_global_overview, _group_stats_by_role
 
 
 class MockZooKeeperStats(object):
 
-  def __init__(self, host, port):
-    pass
+  calls = []
+
+  def __init__(self, host, port, **kwargs):
+    MockZooKeeperStats.calls.append(kwargs)
 
   def get_stats(self):
     return {}
-
 
 
 class ZooKeeperMockBase(object):
@@ -41,6 +42,7 @@ class ZooKeeperMockBase(object):
       stats.OriginalZooKeeperApi = stats.ZooKeeperStats
 
     stats.ZooKeeperStats = MockZooKeeperStats
+    MockZooKeeperStats.calls = []
 
   def teardown_method(self):
     stats.ZooKeeperStats = stats.OriginalZooKeeperApi
@@ -63,3 +65,30 @@ class TestMockedZooKeeper(ZooKeeperMockBase):
       _get_global_overview()
     finally:
       finish()
+
+  def test_cluster_options_reach_stats_client(self):
+    finish = CLUSTERS.set_for_testing({'default': {
+        'host_ports': 'zk1.example:2181,zk2.example:2181',
+        'admin_port': 8080,
+        'security_enabled': True,
+    }})
+
+    try:
+      _get_global_overview()
+
+    finally:
+      finish()
+
+    assert MockZooKeeperStats.calls == [
+        {'admin_port': 8080, 'security_enabled': True, 'ssl_cert_ca_verify': False},
+        {'admin_port': 8080, 'security_enabled': True, 'ssl_cert_ca_verify': False},
+    ]
+
+  def test_group_stats_by_role_reads_prefixed_admin_keys(self):
+    overview = {
+        'zk1.example:2181': {'zk_server_state': 'leader'},
+        'zk2.example:2181': {'zk_server_state': 'follower'},
+    }
+    leader, followers = _group_stats_by_role(overview)
+    assert leader['host'] == 'zk1.example:2181'
+    assert [follower['host'] for follower in followers] == ['zk2.example:2181']

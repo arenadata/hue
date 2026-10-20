@@ -18,6 +18,7 @@
 from django.http import Http404
 
 from zookeeper.conf import CLUSTERS
+from zookeeper.rest import ZooKeeper
 
 
 def get_cluster_or_404(id):
@@ -28,10 +29,19 @@ def get_cluster_or_404(id):
     raise Http404()
 
   cluster = {
-    'id': id,
-    'nice_name': id,
-    'host_ports': cluster.HOST_PORTS.get(),
-    'rest_url': cluster.REST_URL.get(),
+      'id': id,
+      'nice_name': id,
+      'host_ports': cluster.HOST_PORTS.get(),
+      'rest_url': cluster.REST_URL.get(),
+      'admin_port': cluster.ADMIN_PORT.get(),
+      'security_enabled': cluster.SECURITY_ENABLED.get(),
+      'ssl_cert_ca_verify': cluster.SSL_CERT_CA_VERIFY.get(),
   }
 
   return cluster
+
+
+def get_client(cluster):
+  return ZooKeeper(cluster['rest_url'],
+                   security_enabled=cluster['security_enabled'],
+                   ssl_cert_ca_verify=cluster['ssl_cert_ca_verify'])

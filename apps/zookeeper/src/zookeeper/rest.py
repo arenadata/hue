@@ -15,221 +15,203 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from future import standard_library
-standard_library.install_aliases()
-from builtins import map
-from builtins import object
-import json
-import urllib.request, urllib.parse, urllib.error
-import urllib.request, urllib.error, urllib.parse
+import logging
+import urllib.parse
+from builtins import map, object
 
-from contextlib import contextmanager
-from desktop.conf import REST_CONN_TIMEOUT
+from django.utils.encoding import iri_to_uri
+
+from desktop.lib.rest.http_client import HttpClient, RestException
+
+LOG = logging.getLogger(__name__)
 
 
-class RequestWithMethod(urllib.request.Request):
-    """ Request class that know how to set the method name """
-    def __init__(self, *args, **kwargs):
-        urllib.request.Request.__init__(self, *args, **kwargs)
-        self._method = None
+class ZooKeeperHttpClient(HttpClient):
+  """HttpClient variant that keeps the request path verbatim.
 
-    def get_method(self):
-        return self._method or \
-            urllib.request.Request.get_method(self)
+  The REST gateway routes are trailing-slash sensitive (znodes/v1{path: /.*},
+  sessions/v1/{session: .*}) and HttpClient._make_url would normalize
+  /znodes/v1/ into /znodes/v1, which the gateway rejects with a 404.
+  """
 
-    def set_method(self, method):
-        self._method = method
+  def _make_url(self, path, params, do_urlencode=True):
+    res = self._base_url
+    if path:
+      res += '/' + path.lstrip('/')
+    if params:
+      if do_urlencode:
+        param_str = urllib.parse.urlencode(params)
+      else:
+        param_str = '&'.join(['%s=%s' % (k, v) for k, v in params.items()])
+      res += '?' + param_str
+    return iri_to_uri(res)
 
 
 class ZooKeeper(object):
 
-    class Error(Exception): pass
+  class Error(Exception):
+    pass
 
-    class NotFound(Error): pass
+  class NotFound(Error):
+    pass
 
-    class ZNodeExists(Error): pass
+  class ZNodeExists(Error):
+    pass
 
-    class InvalidSession(Error): pass
+  class InvalidSession(Error):
+    pass
 
-    class WrongVersion(Error): pass
+  class WrongVersion(Error):
+    pass
 
-    def __init__(self, uri='http://localhost:9998'):
-        self._base = uri
-        self._session = None
+  def __init__(self, uri='http://localhost:9998', security_enabled=False, ssl_cert_ca_verify=False):
+    self._session = None
+    self._client = ZooKeeperHttpClient(uri, logger=LOG)
+    if security_enabled:
+      self._client.set_kerberos_auth()
+    self._client.set_verify(ssl_cert_ca_verify)
 
-    def start_session(self, expire=5, id=None):
-        """ Create a session and return the ID """
-        if id is None:
-            url = "%s/sessions/v1/?op=create&expire=%d" % (self._base, expire)
-            self._session = self._do_post(url)['id']
-        else:
-            self._session = id
-        return self._session
+  def start_session(self, expire=5, id=None):
+    """ Create a session and return the ID """
+    if id is None:
+      resp = self._do_post('sessions/v1/', params={'op': 'create', 'expire': expire})
+      self._session = resp['id']
+    else:
+      self._session = id
+    return self._session
 
-    def close_session(self):
-        """ Close the session on the server """
-        if self._session is not None:
-            url = '%s/sessions/v1/%s' % (self._base, self._session)
-            self._do_delete(url)
-            self._session = None
+  def close_session(self):
+    """ Close the session on the server """
+    if self._session is not None:
+      self._do_delete('sessions/v1/%s' % self._session)
+      self._session = None
 
-    def heartbeat(self):
-        """ Send a heartbeat request. This is needed in order to keep a session alive """
-        if self._session is not None:
-            url = '%s/sessions/v1/%s' % (self._base, self._session)
-            self._do_put(url, '')
+  def heartbeat(self):
+    """ Send a heartbeat request. This is needed in order to keep a session alive """
+    if self._session is not None:
+      self._do_put('sessions/v1/%s' % self._session, None)
 
-    @contextmanager
-    def session(self, *args, **kwargs):
-        """ Session handling using a context manager """
-        yield self.start_session(*args, **kwargs)
-        self.close_session()
+  def get(self, path):
+    """ Get a node """
+    return self._do_get('znodes/v1%s' % path)
 
-    def get(self, path):
-        """ Get a node """
-        url = "%s/znodes/v1%s" % (self._base, urllib.parse.quote(path, safe='/'))
-        return self._do_get(url)
+  def get_children(self, path):
+    """ Get all the children for a given path. This function creates a generator """
+    for child_path in self.get_children_paths(path, uris=True):
+      try:
+        yield self._do_get(child_path)
+      except ZooKeeper.NotFound:
+        continue
 
-    def get_children(self, path):
-        """ Get all the children for a given path. This function creates a generator """
-        for child_path in self.get_children_paths(path, uris=True):
-            try:
-                yield self._do_get(child_path)
-            except ZooKeeper.NotFound:
-                continue
+  def get_children_paths(self, path, uris=False):
+    """ Get the paths for children nodes """
+    resp = self._do_get('znodes/v1%s' % path, params={'view': 'children'})
+    for child in resp.get('children', []):
+      yield child if not uris else 'znodes/v1%s/%s' % (path.rstrip('/'), child)
 
-    def get_children_paths(self, path, uris=False):
-        """ Get the paths for children nodes """
-        url = "%s/znodes/v1%s?view=children" % (self._base, urllib.parse.quote(path, safe='/'))
-        resp = self._do_get(url)
-        for child in resp.get('children', []):
-            yield child if not uris else resp['child_uri_template']\
-              .replace('{child}', urllib.parse.quote(child))
+  def create(self, path, data=None, sequence=False, ephemeral=False):
+    """ Create a new node. By default this call creates a persistent znode.
 
-    def create(self, path, data=None, sequence=False, ephemeral=False):
-        """ Create a new node. By default this call creates a persistent znode.
+    You can also create an ephemeral or a sequential znode.
+    """
+    ri = path.rindex('/')
+    head, name = path[:ri] or '/', path[ri + 1:]
 
-        You can also create an ephemeral or a sequential znode.
-        """
-        ri = path.rindex('/')
-        head, name = path[:ri+1], path[ri+1:]
-        if head != '/': head = head[:-1]
+    flags = {
+        'op': 'create',
+        'name': name,
+        'null': 'true' if data is None else 'false',
+        'ephemeral': 'true' if ephemeral else 'false',
+        'sequence': 'true' if sequence else 'false'
+    }
+    if ephemeral:
+      if self._session:
+        flags['session'] = self._session
+      else:
+        raise ZooKeeper.Error('You need a session to create an ephemeral node')
 
-        flags = {
-            'null': 'true' if data is None else 'false',
-            'ephemeral': 'true' if ephemeral else 'false',
-            'sequence': 'true' if sequence else 'false'
-        }
-        if ephemeral:
-            if self._session:
-                flags['session'] = self._session
-            else:
-                raise ZooKeeper.Error('You need a session to create an ephemeral node')
-        flags = urllib.parse.urlencode(flags)
+    return self._do_post('znodes/v1%s' % head, params=flags, data=data)
 
-        url = "%s/znodes/v1%s?op=create&name=%s&%s" % (self._base, head, name, flags)
+  def set(self, path, data=None, version=-1, null=False):
+    """ Set the value of node """
+    return self._do_put('znodes/v1%s' % path, data, params={
+        'version': version,
+        'null': 'true' if null else 'false'
+    })
 
-        return self._do_post(url, data)
+  def delete(self, path, version=-1):
+    """ Delete a znode """
+    if type(path) is list:
+      list(map(lambda el: self.delete(el, version), path))
+      return
 
-    def set(self, path, data=None, version=-1, null=False):
-        """ Set the value of node """
-        url = "%s/znodes/v1%s?%s" % (self._base, path, urllib.parse.urlencode({
-                'version': version,
-                'null': 'true' if null else 'false'
-        }))
-        return self._do_put(url, data)
+    return self._do_delete('znodes/v1%s' % path, params={'version': version})
 
-    def delete(self, path, version=-1):
-        """ Delete a znode """
-        if type(path) is list:
-            list(map(lambda el: self.delete(el, version), path))
-            return
+  def recursive_delete(self, path):
+    """ Delete all the nodes from the tree """
+    for child in self.get_children_paths(path):
+      fp = ("%s/%s" % (path, child)).replace('//', '/')
+      self.recursive_delete(fp)
+    self.delete(path)
 
-        url = '%s/znodes/v1%s?%s' % (self._base, path, \
-            urllib.parse.urlencode({
-                'version':version
-        }))
-        try:
-            return self._do_delete(url)
-        except urllib.error.HTTPError as e:
-            if e.code == 412:
-                raise ZooKeeper.WrongVersion(path)
-            elif e.code == 404:
-                raise ZooKeeper.NotFound(path)
-            raise
+  def exists(self, path):
+    """ Do a znode exists """
+    try:
+      self.get(path)
+      return True
+    except ZooKeeper.NotFound:
+      return False
 
-    def recursive_delete(self, path):
-        """ Delete all the nodes from the tree """
-        for child in self.get_children_paths(path):
-            fp = ("%s/%s" % (path, child)).replace('//', '/')
-            self.recursive_delete(fp)
-        self.delete(path)
+  def _do_get(self, path, params=None):
+    """ Send a GET request and convert errors to exceptions """
+    try:
+      resp = self._client.execute('GET', path, params=params,
+                                  headers={'Accept': 'application/json'})
+      return self._parse(resp)
+    except RestException as e:
+      if e.code == 404:
+        raise ZooKeeper.NotFound(path)
+      raise
 
-    def exists(self, path):
-        """ Do a znode exists """
-        try:
-            self.get(path)
-            return True
-        except ZooKeeper.NotFound:
-            return False
+  def _do_post(self, path, params=None, data=None):
+    """ Send a POST request and convert errors to exceptions """
+    try:
+      resp = self._client.execute('POST', path, params=params, data=data,
+                                  headers={'Accept': 'application/json',
+                                           'Content-Type': 'application/octet-stream'})
+      return self._parse(resp)
+    except RestException as e:
+      if e.code == 409:
+        raise ZooKeeper.ZNodeExists(path)
+      elif e.code == 401 and params and 'session' in params:
+        # The gateway answers 401 for an unknown session; a bare 401 elsewhere
+        # is an authentication failure and should not masquerade as this.
+        raise ZooKeeper.InvalidSession(path)
+      raise
 
-    def _do_get(self, uri):
-        """ Send a GET request and convert errors to exceptions """
-        try:
-            req = urllib.request.Request(uri)
-            req.add_header("Accept", "application/json");
-            r = urllib.request.urlopen(req, timeout=REST_CONN_TIMEOUT.get())
-            resp = json.load(r)
+  def _do_delete(self, path, params=None):
+    """ Send a DELETE request """
+    try:
+      return self._client.execute('DELETE', path, params=params)
+    except RestException as e:
+      if e.code == 412:
+        raise ZooKeeper.WrongVersion(path)
+      elif e.code == 404:
+        raise ZooKeeper.NotFound(path)
+      raise
 
-            if 'Error' in resp:
-               raise ZooKeeper.Error(resp['Error'])
+  def _do_put(self, path, data, params=None):
+    """ Send a PUT request """
+    try:
+      return self._client.execute('PUT', path, params=params, data=data,
+                                  headers={'Content-Type': 'application/octet-stream'})
+    except RestException as e:
+      if e.code == 412:  # precondition failed
+        raise ZooKeeper.WrongVersion(path)
+      raise
 
-            return resp
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                raise ZooKeeper.NotFound(uri)
-            raise
-
-    def _do_post(self, uri, data=None):
-        """ Send a POST request and convert errors to exceptions """
-        try:
-            req = urllib.request.Request(uri, {})
-            req.add_header('Content-Type', 'application/octet-stream')
-            if data is not None:
-                req.add_data(data)
-
-            resp = json.load(urllib.request.urlopen(req, timeout=REST_CONN_TIMEOUT.get()))
-            if 'Error' in resp:
-                raise ZooKeeper.Error(resp['Error'])
-            return resp
-
-        except urllib.error.HTTPError as e:
-            if e.code == 201:
-                return True
-            elif e.code == 409:
-                raise ZooKeeper.ZNodeExists(uri)
-            elif e.code == 401:
-                raise ZooKeeper.InvalidSession(uri)
-            raise
-
-    def _do_delete(self, uri):
-        """ Send a DELETE request """
-        req = RequestWithMethod(uri)
-        req.set_method('DELETE')
-        req.add_header('Content-Type', 'application/octet-stream')
-        return urllib.request.urlopen(req, timeout=REST_CONN_TIMEOUT.get()).read()
-
-    def _do_put(self, uri, data):
-        """ Send a PUT request """
-        try:
-            req = RequestWithMethod(uri)
-            req.set_method('PUT')
-            req.add_header('Content-Type', 'application/octet-stream')
-            if data is not None:
-                req.add_data(data)
-
-            return urllib.request.urlopen(req, timeout=REST_CONN_TIMEOUT.get()).read()
-        except urllib.error.HTTPError as e:
-            if e.code == 412: # precondition failed
-                raise ZooKeeper.WrongVersion(uri)
-            raise
+  def _parse(self, resp):
+    body = resp.json()
+    if 'Error' in body:
+      raise ZooKeeper.Error(body['Error'])
+    return body
