@@ -34,7 +34,6 @@ class MockZooKeeperStats(object):
     return {}
 
 
-
 class ZooKeeperMockBase(object):
 
   def setup_method(self):
