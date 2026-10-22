@@ -2261,6 +2261,51 @@ TASK_SERVER_V2 = ConfigSection(
 ))
 
 
+TEMP_CLEANUP = ConfigSection(
+  key="temp_cleanup",
+  help=_("Automatic cleanup of temporary files and directories created by Hue."),
+  members=dict(
+    ENABLED=Config(
+      key='enabled',
+      default=True,
+      type=coerce_bool,
+      help=_('Enable automatic cleanup of stale Hue temporary files and directories.')
+    ),
+    IN_PROCESS=Config(
+      key='in_process',
+      default=False,
+      type=coerce_bool,
+      help=_('Run the cleanup thread inside Hue web processes. Disable when the dedicated temp_cleanup worker is used.')
+    ),
+    INTERVAL_SECONDS=Config(
+      key='interval_seconds',
+      default=3600,
+      type=coerce_positive_integer,
+      help=_('How often the cleanup runs, in seconds.')
+    ),
+    TTL_HOURS=Config(
+      key='ttl_hours',
+      default=24,
+      type=coerce_positive_integer,
+      help=_('Only remove Hue temporary artifacts older than this many hours.')
+    ),
+    DRY_RUN=Config(
+      key='dry_run',
+      default=False,
+      type=coerce_bool,
+      help=_('Log what would be removed without deleting anything.')
+    ),
+    CLEAN_LEGACY_MAKO_DIRS=Config(
+      key='clean_legacy_mako_dirs',
+      default=False,
+      type=coerce_bool,
+      help=_('Also remove legacy anonymous Mako module directories (tmp*) created by older Hue versions. '
+             'Use the temp_cleanup management command for the one-time cleanup of existing directories.')
+    ),
+  )
+)
+
+
 def has_channels():
   return WEBSOCKETS.ENABLED.get()
 
