@@ -56,6 +56,7 @@ from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
+from desktop.lib.temp_paths import VAULT_DIR_PREFIX
 from desktop.lib.vault_conf import VaultConfig, get_vault_config, vault_url_host
 
 global _resolver
@@ -77,7 +78,7 @@ def _default_ccache_path() -> str:
   """
     global _ccache_dir
     if _ccache_dir is None:
-        _ccache_dir = tempfile.mkdtemp(prefix='hue_vault_%d_' % os.getpid())
+        _ccache_dir = tempfile.mkdtemp(prefix='%s%d_' % (VAULT_DIR_PREFIX, os.getpid()))
         atexit.register(shutil.rmtree, _ccache_dir, ignore_errors=True)
     return os.path.join(_ccache_dir, 'ccache')
 

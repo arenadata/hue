@@ -59,6 +59,18 @@ class Command(BaseCommand):
       help=_('Also remove legacy anonymous tmp* Mako module directories created by older Hue versions.')
     )
     parser.add_argument(
+      '--legacy-empty-mako',
+      action='store_true',
+      default=None,
+      help=_('Also remove empty legacy Mako directories during an explicit upgrade cleanup.')
+    )
+    parser.add_argument(
+      '--legacy-indexer-config',
+      action='store_true',
+      default=None,
+      help=_('Also remove legacy anonymous indexer copy_configs temporary directories.')
+    )
+    parser.add_argument(
       '--loop',
       action='store_true',
       default=False,
@@ -75,6 +87,15 @@ class Command(BaseCommand):
     ttl_hours = options['ttl_hours'] if options['ttl_hours'] is not None else TEMP_CLEANUP.TTL_HOURS.get()
     dry_run = options['dry_run'] if options['dry_run'] is not None else TEMP_CLEANUP.DRY_RUN.get()
     clean_legacy = options['legacy'] if options['legacy'] is not None else TEMP_CLEANUP.CLEAN_LEGACY_MAKO_DIRS.get()
+    clean_legacy_empty = (
+      options['legacy_empty_mako']
+      if options['legacy_empty_mako'] is not None else TEMP_CLEANUP.CLEAN_LEGACY_EMPTY_MAKO_DIRS.get()
+    )
+    clean_legacy_indexer_config = (
+      options['legacy_indexer_config']
+      if options['legacy_indexer_config'] is not None else TEMP_CLEANUP.CLEAN_LEGACY_INDEXER_CONFIG_TEMPS.get()
+    )
+    clean_legacy_vault = TEMP_CLEANUP.CLEAN_LEGACY_VAULT_DIRS.get()
 
     if ttl_hours < 0:
       raise ValueError('--ttl-hours must not be negative')
@@ -108,6 +129,9 @@ class Command(BaseCommand):
           ttl_hours=ttl_hours,
           dry_run=dry_run,
           clean_legacy=clean_legacy,
+          clean_legacy_empty=clean_legacy_empty,
+          clean_legacy_vault=clean_legacy_vault,
+          clean_legacy_indexer_config=clean_legacy_indexer_config,
           stop_event=stop_event,
         )
       finally:
@@ -115,7 +139,14 @@ class Command(BaseCommand):
           signal.signal(signum, handler)
       return
 
-    result = run_cleanup_locked(ttl_hours=ttl_hours, dry_run=dry_run, clean_legacy=clean_legacy)
+    result = run_cleanup_locked(
+      ttl_hours=ttl_hours,
+      dry_run=dry_run,
+      clean_legacy=clean_legacy,
+      clean_legacy_empty=clean_legacy_empty,
+      clean_legacy_vault=clean_legacy_vault,
+      clean_legacy_indexer_config=clean_legacy_indexer_config,
+    )
 
     if result is None:
       self.stdout.write(self.style.WARNING('Skipped: another Hue temporary cleanup is already running.'))
@@ -123,7 +154,20 @@ class Command(BaseCommand):
 
     self.stdout.write(
       self.style.SUCCESS(
-        'Removed mako=%d vault=%d archive=%d item(s) (ttl_hours=%d, dry_run=%s, legacy=%s)'
-        % (len(result['mako']), len(result['vault']), len(result['archive']), ttl_hours, dry_run, clean_legacy)
+        'Removed mako=%d vault=%d archive=%d django_uploads=%d indexer_staging=%d indexer_config=%d '
+        'legacy_indexer_config=%d item(s) (ttl_hours=%d, dry_run=%s, legacy=%s, legacy_empty=%s)'
+        % (
+          len(result['mako']),
+          len(result['vault']),
+          len(result['archive']),
+          len(result['django_uploads']),
+          len(result['indexer_staging']),
+          len(result['indexer_config']),
+          len(result['legacy_indexer_config']),
+          ttl_hours,
+          dry_run,
+          clean_legacy,
+          clean_legacy_empty,
+        )
       )
     )

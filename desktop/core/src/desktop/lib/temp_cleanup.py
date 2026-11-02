@@ -23,8 +23,16 @@ import shutil
 import logging
 import tempfile
 import threading
+from collections import defaultdict
 
 from desktop.conf import TEMP_CLEANUP
+from desktop.lib.temp_paths import (
+  INDEXER_CONFIG_DIR_PREFIX,
+  INDEXER_STAGING_PREFIX,
+  LEGACY_TMP_PREFIX,
+  MAKO_DIR_PREFIX,
+  VAULT_DIR_PREFIX,
+)
 
 try:
   import fcntl
@@ -33,10 +41,15 @@ except ImportError:
 
 LOG = logging.getLogger(__name__)
 
-MAKO_DIR_PREFIX = 'hue_mako_'
-VAULT_DIR_PREFIX = 'hue_vault_'
 LOCK_FILE_NAME = 'hue_temp_cleanup.lock'
 SERVER_COMMANDS = ('runserver', 'rungunicornserver', 'runcpserver')
+DJANGO_UPLOAD_PATTERN = re.compile(r'^tmp.*\.upload(?:\..+)?$')
+INDEXER_STAGING_PATTERN = re.compile(
+  r'^(?:%s)?[^/]+_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[^/]*;.*\.csv$'
+  % re.escape(INDEXER_STAGING_PREFIX),
+  re.IGNORECASE,
+)
+ARCHIVE_PART_PATTERN = re.compile(r'^(?P<upload_id>[A-Za-z0-9-]+)_(?P<part_index>\d+)$')
 
 _service = None
 _service_guard = threading.Lock()
@@ -58,7 +71,18 @@ def _pid_from_name(name, prefix):
   return int(match.group(1)) if match else None
 
 
+def _is_zombie(pid):
+  try:
+    with open('/proc/%s/stat' % pid) as stat_file:
+      stat = stat_file.read()
+    return stat.rsplit(')', 1)[1].strip().split()[0] == 'Z'
+  except (OSError, IndexError):
+    return False
+
+
 def _is_process_alive(pid):
+  if _is_zombie(pid):
+    return False
   try:
     os.kill(pid, 0)
   except ProcessLookupError:
@@ -107,6 +131,14 @@ def _remove_file(path, dry_run):
     return False
 
 
+def _is_empty_dir(path):
+  try:
+    with os.scandir(path) as entries:
+      return next(entries, None) is None
+  except OSError:
+    return False
+
+
 def _is_mako_module_dir(path):
   found_mako = False
   for current, dirs, files in os.walk(path):
@@ -149,12 +181,12 @@ def _cleanup_prefixed_dirs(root, prefix, ttl_hours, dry_run, clean_legacy):
   return removed
 
 
-def cleanup_mako_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=False):
+def cleanup_mako_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=False, clean_legacy_empty=False):
   root = root or tempfile.gettempdir()
   ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
   removed = _cleanup_prefixed_dirs(root, MAKO_DIR_PREFIX, ttl_hours, dry_run, clean_legacy)
 
-  if clean_legacy:
+  if clean_legacy or clean_legacy_empty:
     cutoff = _cutoff(ttl_hours)
     try:
       entries = os.scandir(root)
@@ -167,23 +199,28 @@ def cleanup_mako_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=Fal
         try:
           if (
             not entry.is_dir(follow_symlinks=False)
-            or not entry.name.startswith('tmp')
+            or not entry.name.startswith(LEGACY_TMP_PREFIX)
             or not _is_old(entry.path, cutoff)
-            or not _is_mako_module_dir(entry.path)
           ):
             continue
+          if clean_legacy and _is_mako_module_dir(entry.path):
+            should_remove = True
+          elif clean_legacy_empty and _is_empty_dir(entry.path):
+            should_remove = True
+          else:
+            should_remove = False
         except OSError:
           continue
-        if _remove_dir(entry.path, root, dry_run):
+        if should_remove and _remove_dir(entry.path, root, dry_run):
           removed.append(entry.path)
 
   return removed
 
 
-def cleanup_vault_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=False):
+def cleanup_vault_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=False, clean_legacy_vault=True):
   root = root or tempfile.gettempdir()
   ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
-  return _cleanup_prefixed_dirs(root, VAULT_DIR_PREFIX, ttl_hours, dry_run, clean_legacy)
+  return _cleanup_prefixed_dirs(root, VAULT_DIR_PREFIX, ttl_hours, dry_run, clean_legacy or clean_legacy_vault)
 
 
 def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False):
@@ -195,24 +232,142 @@ def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False):
     return removed
 
   try:
-    entries = os.scandir(directory)
+    entries = list(os.scandir(directory))
   except OSError as error:
     LOG.warning('Cannot scan %s: %s', directory, error)
+    return removed
+
+  chunk_groups = defaultdict(list)
+  for entry in entries:
+    try:
+      if entry.is_dir(follow_symlinks=False):
+        if _is_old(entry.path, cutoff) and _remove_dir(entry.path, directory, dry_run):
+          removed.append(entry.path)
+        continue
+      if not (entry.is_file(follow_symlinks=False) or entry.is_symlink()):
+        continue
+    except OSError:
+      continue
+
+    match = ARCHIVE_PART_PATTERN.match(entry.name)
+    if match:
+      chunk_groups[match.group('upload_id')].append(entry)
+    elif _is_old(entry.path, cutoff) and _remove_file(entry.path, dry_run):
+      removed.append(entry.path)
+
+  for parts in chunk_groups.values():
+    try:
+      latest_mtime = max(os.lstat(entry.path).st_mtime for entry in parts)
+    except OSError:
+      continue
+    if latest_mtime >= cutoff:
+      continue
+    for entry in parts:
+      if _remove_file(entry.path, dry_run):
+        removed.append(entry.path)
+
+  return removed
+
+
+def _cleanup_matching_files(root, matcher, ttl_hours, dry_run):
+  cutoff = _cutoff(ttl_hours)
+  removed = []
+  try:
+    entries = os.scandir(root)
+  except OSError as error:
+    LOG.warning('Cannot scan %s: %s', root, error)
     return removed
 
   with entries:
     for entry in entries:
       try:
-        if not _is_old(entry.path, cutoff):
+        if not entry.is_file(follow_symlinks=False):
           continue
-        if entry.is_dir(follow_symlinks=False):
-          if _remove_dir(entry.path, directory, dry_run):
-            removed.append(entry.path)
-        elif entry.is_file(follow_symlinks=False) or entry.is_symlink():
-          if _remove_file(entry.path, dry_run):
-            removed.append(entry.path)
+        if not matcher(entry.name) or not _is_old(entry.path, cutoff):
+          continue
       except OSError:
         continue
+      if _remove_file(entry.path, dry_run):
+        removed.append(entry.path)
+
+  return removed
+
+
+def cleanup_django_uploads(root=None, ttl_hours=None, dry_run=False):
+  root = root or tempfile.gettempdir()
+  ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
+  return _cleanup_matching_files(root, DJANGO_UPLOAD_PATTERN.match, ttl_hours, dry_run)
+
+
+def cleanup_indexer_staging(root=None, ttl_hours=None, dry_run=False):
+  root = root or tempfile.gettempdir()
+  ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
+  return _cleanup_matching_files(root, INDEXER_STAGING_PATTERN.match, ttl_hours, dry_run)
+
+
+def cleanup_indexer_config_dirs(root=None, ttl_hours=None, dry_run=False):
+  root = root or tempfile.gettempdir()
+  ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
+  cutoff = _cutoff(ttl_hours)
+  removed = []
+  try:
+    entries = os.scandir(root)
+  except OSError as error:
+    LOG.warning('Cannot scan %s: %s', root, error)
+    return removed
+
+  with entries:
+    for entry in entries:
+      try:
+        if (
+          not entry.is_dir(follow_symlinks=False)
+          or not entry.name.startswith(INDEXER_CONFIG_DIR_PREFIX)
+          or not _is_old(entry.path, cutoff)
+        ):
+          continue
+      except OSError:
+        continue
+      if _remove_dir(entry.path, root, dry_run):
+        removed.append(entry.path)
+
+  return removed
+
+
+def _is_legacy_indexer_config_dir(path):
+  for relative_path in (
+    os.path.join('solr_configs', 'conf', 'solrconfig.xml'),
+    os.path.join('solr_configs', 'conf', 'schema.xml'),
+  ):
+    if os.path.isfile(os.path.join(path, relative_path)):
+      return True
+  return False
+
+
+def cleanup_legacy_indexer_config_dirs(root=None, ttl_hours=None, dry_run=False):
+  root = root or tempfile.gettempdir()
+  ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
+  cutoff = _cutoff(ttl_hours)
+  removed = []
+  try:
+    entries = os.scandir(root)
+  except OSError as error:
+    LOG.warning('Cannot scan %s: %s', root, error)
+    return removed
+
+  with entries:
+    for entry in entries:
+      try:
+        if (
+          not entry.is_dir(follow_symlinks=False)
+          or not entry.name.startswith(LEGACY_TMP_PREFIX)
+          or not _is_old(entry.path, cutoff)
+          or not _is_legacy_indexer_config_dir(entry.path)
+        ):
+          continue
+      except OSError:
+        continue
+      if _remove_dir(entry.path, root, dry_run):
+        removed.append(entry.path)
 
   return removed
 
@@ -226,22 +381,69 @@ def _get_archive_tempdir():
     return None
 
 
-def run_cleanup(ttl_hours=None, dry_run=None, clean_legacy=None):
+def run_cleanup(
+  ttl_hours=None,
+  dry_run=None,
+  clean_legacy=None,
+  clean_legacy_empty=None,
+  clean_legacy_vault=None,
+  clean_legacy_indexer_config=None,
+):
   ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
   dry_run = TEMP_CLEANUP.DRY_RUN.get() if dry_run is None else dry_run
   clean_legacy = TEMP_CLEANUP.CLEAN_LEGACY_MAKO_DIRS.get() if clean_legacy is None else clean_legacy
+  clean_legacy_empty = (
+    TEMP_CLEANUP.CLEAN_LEGACY_EMPTY_MAKO_DIRS.get() if clean_legacy_empty is None else clean_legacy_empty
+  )
+  clean_legacy_vault = TEMP_CLEANUP.CLEAN_LEGACY_VAULT_DIRS.get() if clean_legacy_vault is None else clean_legacy_vault
+  clean_legacy_indexer_config = (
+    TEMP_CLEANUP.CLEAN_LEGACY_INDEXER_CONFIG_TEMPS.get()
+    if clean_legacy_indexer_config is None else clean_legacy_indexer_config
+  )
 
   result = {
-    'mako': cleanup_mako_dirs(ttl_hours=ttl_hours, dry_run=dry_run, clean_legacy=clean_legacy),
-    'vault': cleanup_vault_dirs(ttl_hours=ttl_hours, dry_run=dry_run, clean_legacy=clean_legacy),
+    'mako': cleanup_mako_dirs(
+      ttl_hours=ttl_hours,
+      dry_run=dry_run,
+      clean_legacy=clean_legacy,
+      clean_legacy_empty=clean_legacy_empty,
+    ),
+    'vault': cleanup_vault_dirs(
+      ttl_hours=ttl_hours,
+      dry_run=dry_run,
+      clean_legacy=clean_legacy,
+      clean_legacy_vault=clean_legacy_vault,
+    ),
     'archive': cleanup_archive_tempdir(_get_archive_tempdir(), ttl_hours=ttl_hours, dry_run=dry_run),
+    'django_uploads': (
+      cleanup_django_uploads(ttl_hours=ttl_hours, dry_run=dry_run)
+      if TEMP_CLEANUP.CLEAN_DJANGO_UPLOADS.get() else []
+    ),
+    'indexer_staging': (
+      cleanup_indexer_staging(ttl_hours=ttl_hours, dry_run=dry_run)
+      if TEMP_CLEANUP.CLEAN_INDEXER_STAGING.get() else []
+    ),
+    'indexer_config': (
+      cleanup_indexer_config_dirs(ttl_hours=ttl_hours, dry_run=dry_run)
+      if TEMP_CLEANUP.CLEAN_INDEXER_CONFIG_TEMPS.get() else []
+    ),
+    'legacy_indexer_config': (
+      cleanup_legacy_indexer_config_dirs(ttl_hours=ttl_hours, dry_run=dry_run)
+      if clean_legacy_indexer_config else []
+    ),
   }
   LOG.info(
-    'Hue temporary cleanup removed %d item(s): mako=%d vault=%d archive=%d (ttl_hours=%s, dry_run=%s)',
+    'Hue temporary cleanup removed %d item(s): mako=%d vault=%d archive=%d '
+    'django_uploads=%d indexer_staging=%d indexer_config=%d legacy_indexer_config=%d '
+    '(ttl_hours=%s, dry_run=%s)',
     sum(len(items) for items in result.values()),
     len(result['mako']),
     len(result['vault']),
     len(result['archive']),
+    len(result['django_uploads']),
+    len(result['indexer_staging']),
+    len(result['indexer_config']),
+    len(result['legacy_indexer_config']),
     ttl_hours,
     dry_run,
   )
@@ -277,18 +479,43 @@ def _lock_path(lock_path=None):
   return lock_path or os.path.join(tempfile.gettempdir(), LOCK_FILE_NAME)
 
 
-def run_cleanup_locked(ttl_hours=None, dry_run=None, clean_legacy=None, lock_path=None):
+def run_cleanup_locked(
+  ttl_hours=None,
+  dry_run=None,
+  clean_legacy=None,
+  clean_legacy_empty=None,
+  clean_legacy_vault=None,
+  clean_legacy_indexer_config=None,
+  lock_path=None,
+):
   file_descriptor = _acquire_lock(_lock_path(lock_path))
   if file_descriptor is None:
     LOG.info('Hue temporary cleanup skipped: another cleanup is already running')
     return None
   try:
-    return run_cleanup(ttl_hours=ttl_hours, dry_run=dry_run, clean_legacy=clean_legacy)
+    return run_cleanup(
+      ttl_hours=ttl_hours,
+      dry_run=dry_run,
+      clean_legacy=clean_legacy,
+      clean_legacy_empty=clean_legacy_empty,
+      clean_legacy_vault=clean_legacy_vault,
+      clean_legacy_indexer_config=clean_legacy_indexer_config,
+    )
   finally:
     _release_lock(file_descriptor)
 
 
-def run_cleanup_loop(interval_seconds, ttl_hours=None, dry_run=None, clean_legacy=None, lock_path=None, stop_event=None):
+def run_cleanup_loop(
+  interval_seconds,
+  ttl_hours=None,
+  dry_run=None,
+  clean_legacy=None,
+  clean_legacy_empty=None,
+  clean_legacy_vault=None,
+  clean_legacy_indexer_config=None,
+  lock_path=None,
+  stop_event=None,
+):
   stop_event = stop_event or threading.Event()
   LOG.info('Hue temporary cleanup worker started (interval=%ss)', interval_seconds)
 
@@ -298,6 +525,9 @@ def run_cleanup_loop(interval_seconds, ttl_hours=None, dry_run=None, clean_legac
         ttl_hours=ttl_hours,
         dry_run=dry_run,
         clean_legacy=clean_legacy,
+        clean_legacy_empty=clean_legacy_empty,
+        clean_legacy_vault=clean_legacy_vault,
+        clean_legacy_indexer_config=clean_legacy_indexer_config,
         lock_path=lock_path,
       )
     except Exception as error:

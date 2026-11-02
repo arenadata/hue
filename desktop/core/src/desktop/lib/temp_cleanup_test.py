@@ -18,6 +18,7 @@
 import os
 import time
 import threading
+import subprocess
 from io import StringIO
 
 import pytest
@@ -114,6 +115,44 @@ def test_cleanup_vault_dirs(tmp_path):
   assert fresh.exists()
 
 
+def test_cleanup_legacy_vault_dirs_without_pid(tmp_path):
+  dead = tmp_path / 'hue_vault_legacy'
+  fresh = tmp_path / 'hue_vault_legacy_fresh'
+  foreign = tmp_path / 'tmpvaultlike'
+  for directory in (dead, fresh, foreign):
+    directory.mkdir()
+    (directory / 'ccache').write_text('credentials\n')
+  _touch_old(dead)
+  _touch_old(foreign)
+
+  removed = temp_cleanup.cleanup_vault_dirs(str(tmp_path), ttl_hours=1)
+
+  assert str(dead) in removed
+  assert not dead.exists()
+  assert fresh.exists()
+  assert foreign.exists()
+
+
+def test_cleanup_legacy_empty_mako_dirs_only_with_explicit_flag(tmp_path):
+  empty = tmp_path / 'tmpemptymako'
+  nonempty = tmp_path / 'tmpnonemptymako'
+  empty.mkdir()
+  nonempty.mkdir()
+  (nonempty / 'notes.txt').write_text('not mako\n')
+  _touch_old(empty)
+  _touch_old(nonempty)
+
+  removed = temp_cleanup.cleanup_mako_dirs(str(tmp_path), ttl_hours=1)
+  assert removed == []
+  assert empty.exists()
+
+  removed = temp_cleanup.cleanup_mako_dirs(str(tmp_path), ttl_hours=1, clean_legacy_empty=True)
+
+  assert str(empty) in removed
+  assert not empty.exists()
+  assert nonempty.exists()
+
+
 def test_cleanup_archive_tempdir(tmp_path):
   archive = tmp_path / 'hue_uploads'
   old_dir = archive / 'extract-old'
@@ -182,7 +221,15 @@ def test_run_cleanup_locked_skips_when_lock_is_held(tmp_path, monkeypatch):
   monkeypatch.setattr(
     temp_cleanup,
     'run_cleanup',
-    lambda **kwargs: calls.append(kwargs) or {'mako': [], 'vault': [], 'archive': []},
+    lambda **kwargs: calls.append(kwargs) or {
+      'mako': [],
+      'vault': [],
+      'archive': [],
+      'django_uploads': [],
+      'indexer_staging': [],
+      'indexer_config': [],
+      'legacy_indexer_config': [],
+    },
   )
 
   lock_path = str(tmp_path / 'cleanup.lock')
@@ -195,7 +242,15 @@ def test_run_cleanup_locked_skips_when_lock_is_held(tmp_path, monkeypatch):
 
   result = temp_cleanup.run_cleanup_locked(lock_path=lock_path)
 
-  assert result == {'mako': [], 'vault': [], 'archive': []}
+  assert result == {
+    'mako': [],
+    'vault': [],
+    'archive': [],
+    'django_uploads': [],
+    'indexer_staging': [],
+    'indexer_config': [],
+    'legacy_indexer_config': [],
+  }
   assert len(calls) == 1
 
 
@@ -240,6 +295,175 @@ def test_in_process_is_disabled_by_default():
     enabled()
 
 
+def test_cleanup_archive_tempdir_keeps_active_chunk_group(tmp_path):
+  archive = tmp_path / 'hue_uploads'
+  archive.mkdir()
+  upload_id = '11111111-2222-3333-4444-555555555555'
+  old_part = archive / ('%s_0' % upload_id)
+  fresh_part = archive / ('%s_1' % upload_id)
+  old_other = archive / 'old_other'
+  fresh_other = archive / 'fresh_other'
+
+  old_part.write_text('part\n')
+  fresh_part.write_text('part\n')
+  old_other.write_text('old\n')
+  fresh_other.write_text('fresh\n')
+  _touch_old(old_part)
+  _touch_old(old_other)
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1)
+
+  assert old_part.exists()
+  assert fresh_part.exists()
+  assert not old_other.exists()
+  assert fresh_other.exists()
+  assert str(old_other) in removed
+  assert str(old_part) not in removed
+
+
+def test_cleanup_archive_tempdir_removes_old_chunk_group(tmp_path):
+  archive = tmp_path / 'hue_uploads'
+  archive.mkdir()
+  upload_id = '11111111-2222-3333-4444-555555555555'
+  part_0 = archive / ('%s_0' % upload_id)
+  part_1 = archive / ('%s_1' % upload_id)
+
+  part_0.write_text('part\n')
+  part_1.write_text('part\n')
+  _touch_old(part_0)
+  _touch_old(part_1)
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1)
+
+  assert not part_0.exists()
+  assert not part_1.exists()
+  assert str(part_0) in removed
+  assert str(part_1) in removed
+
+
+def test_cleanup_django_uploads_only_removes_upload_files(tmp_path):
+  old_upload = tmp_path / 'tmpabc.upload.txt'
+  fresh_upload = tmp_path / 'tmpdef.upload.csv'
+  unrelated = tmp_path / 'tmpabc'
+  old_upload.write_text('data\n')
+  fresh_upload.write_text('data\n')
+  unrelated.write_text('keep\n')
+  _touch_old(old_upload)
+  _touch_old(unrelated)
+
+  removed = temp_cleanup.cleanup_django_uploads(str(tmp_path), ttl_hours=1)
+
+  assert not old_upload.exists()
+  assert fresh_upload.exists()
+  assert unrelated.exists()
+  assert str(old_upload) in removed
+
+
+def test_cleanup_indexer_staging_only_removes_hue_staging(tmp_path):
+  old_new = tmp_path / 'hue_indexer_alice_11111111-2222-3333-4444-555555555555:data;abc.csv'
+  fresh_new = tmp_path / 'hue_indexer_alice_11111111-2222-3333-4444-555555555555:data;def.csv'
+  old_legacy = tmp_path / 'alice_11111111-2222-3333-4444-555555555555:data;ghi.csv'
+  unrelated = tmp_path / 'alice_notes.csv'
+  for path in (old_new, fresh_new, old_legacy, unrelated):
+    path.write_text('data\n')
+  _touch_old(old_new)
+  _touch_old(old_legacy)
+  _touch_old(unrelated)
+
+  removed = temp_cleanup.cleanup_indexer_staging(str(tmp_path), ttl_hours=1)
+
+  assert not old_new.exists()
+  assert fresh_new.exists()
+  assert not old_legacy.exists()
+  assert unrelated.exists()
+  assert str(old_new) in removed
+  assert str(old_legacy) in removed
+
+
+def test_cleanup_indexer_config_dirs_only_removes_hue_prefix(tmp_path):
+  old_config = tmp_path / 'hue_indexer_cfg_old'
+  fresh_config = tmp_path / 'hue_indexer_cfg_fresh'
+  unrelated = tmp_path / 'tmp_other'
+  for directory in (old_config, fresh_config, unrelated):
+    directory.mkdir()
+  _touch_old(old_config)
+  _touch_old(unrelated)
+
+  removed = temp_cleanup.cleanup_indexer_config_dirs(str(tmp_path), ttl_hours=1)
+
+  assert not old_config.exists()
+  assert fresh_config.exists()
+  assert unrelated.exists()
+  assert str(old_config) in removed
+
+
+def test_cleanup_legacy_indexer_config_dirs_by_signature(tmp_path):
+  old_config = tmp_path / 'tmplegacyconfig'
+  fresh_config = tmp_path / 'tmplegacyconfigfresh'
+  foreign = tmp_path / 'tmpforeignconfig'
+  for directory in (old_config, fresh_config, foreign):
+    (directory / 'solr_configs' / 'conf').mkdir(parents=True)
+    (directory / 'solr_configs' / 'conf' / 'solrconfig.xml').write_text('<config/>\n')
+  _touch_old(old_config)
+  _touch_old(old_config / 'solr_configs' / 'conf' / 'solrconfig.xml')
+  _touch_old(foreign)
+  (foreign / 'solr_configs' / 'conf' / 'solrconfig.xml').unlink()
+
+  removed = temp_cleanup.cleanup_legacy_indexer_config_dirs(str(tmp_path), ttl_hours=1)
+
+  assert str(old_config) in removed
+  assert not old_config.exists()
+  assert fresh_config.exists()
+  assert foreign.exists()
+
+
+def test_run_cleanup_includes_new_categories(monkeypatch, tmp_path):
+  calls = {}
+
+  monkeypatch.setattr(temp_cleanup, 'cleanup_mako_dirs', lambda **kwargs: calls.setdefault('mako', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_vault_dirs', lambda **kwargs: calls.setdefault('vault', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_archive_tempdir', lambda *args, **kwargs: calls.setdefault('archive', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_django_uploads', lambda **kwargs: calls.setdefault('django_uploads', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_indexer_staging', lambda **kwargs: calls.setdefault('indexer_staging', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_indexer_config_dirs', lambda **kwargs: calls.setdefault('indexer_config', []))
+  monkeypatch.setattr(temp_cleanup, 'cleanup_legacy_indexer_config_dirs', lambda **kwargs: calls.setdefault('legacy_indexer_config', []))
+
+  result = temp_cleanup.run_cleanup(
+    ttl_hours=1,
+    dry_run=False,
+    clean_legacy=False,
+    clean_legacy_indexer_config=True,
+  )
+
+  assert set(result) == {
+    'mako',
+    'vault',
+    'archive',
+    'django_uploads',
+    'indexer_staging',
+    'indexer_config',
+    'legacy_indexer_config',
+  }
+  assert set(calls) == set(result)
+
+
+def test_dry_run_does_not_delete_new_categories(tmp_path):
+  old_upload = tmp_path / 'tmpabc.upload.txt'
+  old_config = tmp_path / 'hue_indexer_cfg_old'
+  old_upload.write_text('data\n')
+  old_config.mkdir()
+  _touch_old(old_upload)
+  _touch_old(old_config)
+
+  removed_uploads = temp_cleanup.cleanup_django_uploads(str(tmp_path), ttl_hours=1, dry_run=True)
+  removed_config = temp_cleanup.cleanup_indexer_config_dirs(str(tmp_path), ttl_hours=1, dry_run=True)
+
+  assert str(old_upload) in removed_uploads
+  assert str(old_config) in removed_config
+  assert old_upload.exists()
+  assert old_config.exists()
+
+
 def test_loop_command_exits_when_disabled():
   enabled = TEMP_CLEANUP.ENABLED.set_for_testing(False)
   try:
@@ -248,3 +472,15 @@ def test_loop_command_exits_when_disabled():
     assert 'disabled' in output.getvalue().lower()
   finally:
     enabled()
+
+
+def test_zombie_process_is_not_alive():
+  if not os.path.isdir('/proc'):
+    pytest.skip('procfs is unavailable on this platform')
+
+  child = subprocess.Popen(['/bin/true'])
+  try:
+    time.sleep(0.2)
+    assert not temp_cleanup._is_process_alive(child.pid)
+  finally:
+    child.wait()

@@ -31,6 +31,7 @@ from django.conf import settings
 from django.utils.translation import gettext as _
 
 from desktop.lib.i18n import force_unicode, smart_str
+from desktop.lib.temp_paths import INDEXER_CONFIG_DIR_PREFIX
 from indexer import conf
 from indexer.models import BOOLEAN_FIELD_TYPES, DATE_FIELD_TYPES, DECIMAL_FIELD_TYPES, INTEGER_FIELD_TYPES, TEXT_FIELD_TYPES
 
@@ -90,7 +91,7 @@ def copy_configs(
   fields, unique_key_field, df, solr_cloud_mode=True, is_solr_six_or_more=False, is_solr_hdfs_mode=True, is_sentry_protected=False
 ):
   # Create temporary copy of solr configs
-  tmp_path = tempfile.mkdtemp()
+  tmp_path = tempfile.mkdtemp(prefix=INDEXER_CONFIG_DIR_PREFIX)
 
   try:
     config_template_path = get_config_template_path(solr_cloud_mode)

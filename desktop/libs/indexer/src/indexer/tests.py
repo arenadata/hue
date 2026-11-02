@@ -15,8 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 import json
+import shutil
 from builtins import object
 from unittest.mock import Mock, patch
 
@@ -28,9 +30,27 @@ from desktop.lib.test_utils import add_to_group, grant_access
 from hadoop.pseudo_hdfs4 import get_db_prefix, is_live_cluster
 from indexer.conf import get_solr_ensemble
 from indexer.controller import CollectionManagerController
+from indexer.utils import copy_configs
 from libsolr import conf as libsolr_conf
 from libzookeeper import conf as libzookeeper_conf
 from useradmin.models import User
+
+
+def test_copy_configs_uses_cleanup_prefix():
+  temp_path, config_path = copy_configs(
+    fields=[],
+    unique_key_field=None,
+    df=None,
+    solr_cloud_mode=False,
+    is_solr_six_or_more=False,
+    is_solr_hdfs_mode=False,
+    is_sentry_protected=False,
+  )
+  try:
+    assert os.path.basename(temp_path).startswith('hue_indexer_cfg_')
+    assert os.path.isdir(config_path)
+  finally:
+    shutil.rmtree(temp_path, ignore_errors=True)
 
 
 def test_get_ensemble():

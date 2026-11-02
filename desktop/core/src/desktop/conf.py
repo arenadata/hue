@@ -2302,6 +2302,42 @@ TEMP_CLEANUP = ConfigSection(
       help=_('Also remove legacy anonymous Mako module directories (tmp*) created by older Hue versions. '
              'Use the temp_cleanup management command for the one-time cleanup of existing directories.')
     ),
+    CLEAN_LEGACY_EMPTY_MAKO_DIRS=Config(
+      key='clean_legacy_empty_mako_dirs',
+      default=False,
+      type=coerce_bool,
+      help=_('Remove empty legacy Mako module directories (tmp*) during an explicit upgrade cleanup.')
+    ),
+    CLEAN_LEGACY_VAULT_DIRS=Config(
+      key='clean_legacy_vault_dirs',
+      default=True,
+      type=coerce_bool,
+      help=_('Remove legacy hue_vault_* directories that do not contain a PID after ttl_hours.')
+    ),
+    CLEAN_LEGACY_INDEXER_CONFIG_TEMPS=Config(
+      key='clean_legacy_indexer_config_temps',
+      default=False,
+      type=coerce_bool,
+      help=_('Remove legacy anonymous indexer copy_configs temp directories during an explicit upgrade cleanup.')
+    ),
+    CLEAN_DJANGO_UPLOADS=Config(
+      key='clean_django_uploads',
+      default=True,
+      type=coerce_bool,
+      help=_('Remove crash leftovers of Django temporary upload files (tmp*.upload*) older than ttl_hours.')
+    ),
+    CLEAN_INDEXER_STAGING=Config(
+      key='clean_indexer_staging',
+      default=True,
+      type=coerce_bool,
+      help=_('Remove local indexer staging CSV files older than ttl_hours.')
+    ),
+    CLEAN_INDEXER_CONFIG_TEMPS=Config(
+      key='clean_indexer_config_temps',
+      default=True,
+      type=coerce_bool,
+      help=_('Remove indexer copy_configs temporary directories (hue_indexer_cfg_*) older than ttl_hours.')
+    ),
   )
 )
 
