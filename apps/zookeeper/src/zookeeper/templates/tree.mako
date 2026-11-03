@@ -153,7 +153,10 @@ ${ shared.footer() }
     $("#removeBtnModal").on("click", function(){
       $(this).addClass("disabled");
       $.post($(this).data("url"), function(data){
-        location.href = data.redirect;
+        var currentPath = window.location.pathname;
+        var appIndex = currentPath.indexOf("/zookeeper/");
+        var base = appIndex > 0 ? currentPath.substring(0, appIndex) : "";
+        location.href = base + data.redirect;
       })
     })
   });

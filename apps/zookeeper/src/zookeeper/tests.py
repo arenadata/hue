@@ -16,9 +16,13 @@
 # limitations under the License.
 
 
+import json
 from builtins import object
+from unittest.mock import patch
 
-from zookeeper import stats
+from django.test import RequestFactory
+
+from zookeeper import stats, views
 from zookeeper.conf import CLUSTERS
 from zookeeper.views import _get_global_overview, _group_stats_by_role
 
@@ -92,3 +96,24 @@ class TestMockedZooKeeper(ZooKeeperMockBase):
     leader, followers = _group_stats_by_role(overview)
     assert leader['host'] == 'zk1.example:2181'
     assert [follower['host'] for follower in followers] == ['zk2.example:2181']
+
+
+class TestDeleteZNode(object):
+
+  def _delete(self, path):
+    request = RequestFactory().post('/zookeeper/delete/default/%s' % path)
+    request.user = None
+
+    with patch.object(views, 'is_admin', return_value=True), \
+         patch.object(views, 'get_cluster_or_404', return_value={}), \
+         patch.object(views, 'get_client') as get_client:
+      response = views.delete(request, 'default', path)
+
+    get_client.return_value.recursive_delete.assert_called_once_with(path)
+    return json.loads(response.content)
+
+  def test_delete_top_level_znode_without_leading_slash_redirects_to_root(self):
+    assert self._delete('hue') == {'redirect': '/zookeeper/tree/default//'}
+
+  def test_delete_nested_znode_redirects_to_parent(self):
+    assert self._delete('hue/services/zookeeper') == {'redirect': '/zookeeper/tree/default/hue/services'}
