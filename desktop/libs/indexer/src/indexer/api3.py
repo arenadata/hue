@@ -37,6 +37,7 @@ from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str
 from desktop.lib.python_util import check_encoding
+from desktop.lib.temp_paths import INDEXER_STAGING_PREFIX
 from desktop.models import Document2
 from filebrowser.forms import UploadLocalFileForm
 from indexer.controller import CollectionManagerController
@@ -760,7 +761,12 @@ def upload_local_file_drag_and_drop(request):
 def upload_local_file(request):
   upload_file = request.FILES['file']
   username = request.user.username
-  filename = "%s_%s:%s;" % (username, uuid.uuid4(), re.sub('[^0-9a-zA-Z]+', '_', upload_file.name))
+  filename = "%s%s_%s:%s;" % (
+    INDEXER_STAGING_PREFIX,
+    username,
+    uuid.uuid4(),
+    re.sub('[^0-9a-zA-Z]+', '_', upload_file.name),
+  )
   file_format = upload_file.name.split(".")[-1]
   file_type = 'csv'
 

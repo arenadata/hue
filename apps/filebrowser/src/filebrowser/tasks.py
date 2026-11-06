@@ -57,6 +57,17 @@ STATE_MAP = {
   states.IGNORED: 'ignored'
 }
 
+PROTECTED_TMP_PATHS = (
+  '/tmp/smart_indexer_lib',
+  '/tmp/hue_create_db',
+  '/tmp/hue_uploads',
+)
+
+
+def _is_protected_tmp_path(path):
+  normalized = os.path.abspath(path)
+  return any(normalized == protected or normalized.startswith(protected + os.sep) for protected in PROTECTED_TMP_PATHS)
+
 
 @app.task
 def error_handler(request, exc, traceback):
@@ -169,13 +180,20 @@ def check_disk_usage_and_clean_task(**kwargs):
 
   def delete_old_files(directory, current_time, time_delta):
     for root, dirs, files in os.walk(directory):
+      dirs[:] = [
+        directory_name for directory_name in dirs
+        if not _is_protected_tmp_path(os.path.join(root, directory_name))
+        and not os.path.islink(os.path.join(root, directory_name))
+      ]
       for file in files:
         file_path = os.path.join(root, file)
+        if _is_protected_tmp_path(file_path) or os.path.islink(file_path):
+          continue
         try:
           file_modified_time = datetime.fromtimestamp(os.path.getmtime(file_path))
           file_modified_time = timezone.make_aware(file_modified_time, timezone.get_default_timezone())
           if file_modified_time < current_time - time_delta:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
+            if os.path.isfile(file_path):
               os.unlink(file_path)
               LOG.info(f"Deleted file {file_path}")
         except PermissionError:

@@ -1,0 +1,5 @@
+MAKO_DIR_PREFIX = 'hue_mako_'
+VAULT_DIR_PREFIX = 'hue_vault_'
+INDEXER_STAGING_PREFIX = 'hue_indexer_'
+INDEXER_CONFIG_DIR_PREFIX = 'hue_indexer_cfg_'
+LEGACY_TMP_PREFIX = 'tmp'

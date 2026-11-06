@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 import json
 from unittest.mock import Mock, patch
@@ -77,6 +78,8 @@ scattered,,,scattered
 
     assert csv_file == test_file
     assert "book_1_xlsx" in path
+    assert os.path.basename(path).startswith('hue_indexer_')
+  os.remove(path)
 
 
 def test_col_names():

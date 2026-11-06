@@ -15,15 +15,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import archives
-from django.test import TestCase
 import os
-import pytest
+import zipfile
 import unittest
+from io import BytesIO
+
+import pytest
+from django.test import TestCase
 
 from filebrowser.lib.archives import IllegalPathException
 
+from . import archives
+
+
 class ArchiveTest(TestCase):
+
+  def test_zip_file_like(self):
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive_file:
+      archive_file.writestr('test.txt', 'test')
+    buffer.seek(0)
+
+    directory = archives.archive_factory(buffer, 'zip').extract()
+
+    assert os.path.isfile(directory + '/test.txt')
+    assert os.path.getsize(directory + '/test.txt') == 4
 
   def test_zip(self):
     FILE = os.path.realpath('apps/filebrowser/src/filebrowser/test_data/test.zip')
@@ -80,6 +96,15 @@ class ArchiveTest(TestCase):
     factory = archives.archive_factory(FILE, 'tar.gz')
     with pytest.raises(IllegalPathException):
       factory.extract()
+
+  def test_bz2(self):
+    FILE = os.path.realpath('apps/filebrowser/src/filebrowser/test_data/test.txt.bz2')
+
+    directory = archives.archive_factory(FILE, 'bz2').extract()
+
+    assert os.path.isfile(directory + '/test.txt')
+    assert os.path.getsize(directory + '/test.txt') == 4
+
 
 if __name__ == "__main__":
   unittest.main()

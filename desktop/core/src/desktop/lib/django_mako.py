@@ -18,6 +18,8 @@
 # Adapted from http://code.google.com/p/django-mako/source/browse/trunk/djangomako/shortcuts.py
 
 import os
+import atexit
+import shutil
 import tempfile
 
 import django.template
@@ -28,6 +30,7 @@ from django.template.context_processors import csrf
 from mako.lookup import TemplateCollection, TemplateLookup
 
 from desktop.lib import apputil, i18n
+from desktop.lib.temp_paths import MAKO_DIR_PREFIX
 
 register = django.template.Library()
 
@@ -64,7 +67,8 @@ class DesktopLookup(TemplateCollection):
     # and thus the temp dir would be owned as root, not the
     # unpriveleged user!
     if self.module_dir is None:
-      self.module_dir = tempfile.mkdtemp()  # TODO(todd) configurable?
+      self.module_dir = tempfile.mkdtemp(prefix='%s%d_' % (MAKO_DIR_PREFIX, os.getpid()))
+      atexit.register(shutil.rmtree, self.module_dir, ignore_errors=True)
     app_module = __import__(app)
     app_dir = os.path.dirname(app_module.__file__)
     app_template_dir = os.path.join(app_dir, 'templates')
