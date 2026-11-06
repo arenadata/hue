@@ -31,6 +31,7 @@ from desktop.lib.temp_paths import (
   INDEXER_STAGING_PREFIX,
   LEGACY_TMP_PREFIX,
   MAKO_DIR_PREFIX,
+  TEMP_CLEANUP_LOCK_NAME,
   VAULT_DIR_PREFIX,
 )
 
@@ -41,7 +42,7 @@ except ImportError:
 
 LOG = logging.getLogger(__name__)
 
-LOCK_FILE_NAME = 'hue_temp_cleanup.lock'
+LOCK_FILE_NAME = TEMP_CLEANUP_LOCK_NAME
 SERVER_COMMANDS = ('runserver', 'rungunicornserver', 'runcpserver')
 DJANGO_UPLOAD_PATTERN = re.compile(r'^tmp.*\.upload(?:\..+)?$')
 INDEXER_STAGING_PATTERN = re.compile(

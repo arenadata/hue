@@ -31,6 +31,7 @@ from desktop.auth.backend import rewrite_user
 from desktop.celery import app
 from desktop.conf import TASK_SERVER_V2
 from desktop.lib import fsmanager
+from desktop.lib.temp_paths import is_protected_tmp_path as _is_protected_tmp_path
 from filebrowser.utils import release_reserved_space_for_file_uploads, reserve_space_for_file_uploads
 
 if hasattr(TASK_SERVER_V2, 'get') and TASK_SERVER_V2.ENABLED.get():
@@ -56,17 +57,6 @@ STATE_MAP = {
   states.REJECTED: 'rejected',
   states.IGNORED: 'ignored'
 }
-
-PROTECTED_TMP_PATHS = (
-  '/tmp/smart_indexer_lib',
-  '/tmp/hue_create_db',
-  '/tmp/hue_uploads',
-)
-
-
-def _is_protected_tmp_path(path):
-  normalized = os.path.abspath(path)
-  return any(normalized == protected or normalized.startswith(protected + os.sep) for protected in PROTECTED_TMP_PATHS)
 
 
 @app.task
