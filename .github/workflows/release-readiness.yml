@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   publication:
-    uses: arenadata/adrm-checks/.github/workflows/publication-readiness.yml@1e0cfbd8e03ee73c94739ceaaba3a85b7d9775f2
+    uses: arenadata/adrm-checks/.github/workflows/publication-readiness.yml@2342bc825d74fa179f9f0e894d838d57258e8dd6
     with:
       mode: ${{ inputs.mode }}
       request_id: ${{ inputs.request_id }}
