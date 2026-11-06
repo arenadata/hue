@@ -1,0 +1,49 @@
+# Thin wrapper to place in the project at .github/workflows/release-readiness.yml. It must exist on the default
+# branch (GitHub dispatches from there) and on every line branch: ADRM dispatches it on the line branch itself
+# in mode=inspect to learn the declared project version of the branch head, in mode=dependencies to read the
+# resolved dependency graph of the branch head from the build and in mode=history to find the commits of older line
+# branches that the branch head lacks.
+# Hue publishes no packages and keeps its Arenadata version only in branch and tag names, so its ADRM repository
+# settings turn off the publication check (mode=check), the version inspection (mode=inspect) and the dependency
+# inventory (mode=dependencies). ADRM dispatches this wrapper in mode=history once older line branches of the
+# template exist. The inputs below are the common ADRM dispatch contract and stay complete.
+# The reusable workflow is pinned to a commit SHA of arenadata/adrm-checks (main).
+name: Release readiness
+run-name: ${{ inputs.mode == 'inspect' && 'line' || inputs.mode == 'dependencies' && 'dependencies' || inputs.mode == 'history' && 'history' || 'publication' }} / ${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      mode: { type: choice, options: [check, inspect, dependencies, history], default: check, required: false }
+      request_id: { type: string, required: true }
+      generation: { type: string, required: true }
+      product_version: { type: string, required: true }
+      expected_checker_sha: { type: string, required: true }
+      target_tag: { type: string, required: false, default: '' }        # mode=check
+      target_sha: { type: string, required: false, default: '' }        # mode=check
+      target_version: { type: string, required: false, default: '' }    # mode=check
+      line_version: { type: string, required: false, default: '' }      # mode=inspect, mode=dependencies, mode=history
+      expected_head_sha: { type: string, required: false, default: '' } # mode=inspect, mode=dependencies, mode=history
+      compare_refs: { type: string, required: false, default: '' }      # mode=history: `<branch>@<sha>` per line
+
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: ${{ inputs.mode == 'inspect' && 'line' || inputs.mode == 'dependencies' && 'dependencies' || inputs.mode == 'history' && 'history' || 'publication' }}-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  publication:
+    uses: arenadata/adrm-checks/.github/workflows/publication-readiness.yml@1e0cfbd8e03ee73c94739ceaaba3a85b7d9775f2
+    with:
+      mode: ${{ inputs.mode }}
+      request_id: ${{ inputs.request_id }}
+      generation: ${{ inputs.generation }}
+      product_version: ${{ inputs.product_version }}
+      expected_checker_sha: ${{ inputs.expected_checker_sha }}
+      target_tag: ${{ inputs.target_tag }}
+      target_sha: ${{ inputs.target_sha }}
+      target_version: ${{ inputs.target_version }}
+      line_version: ${{ inputs.line_version }}
+      expected_head_sha: ${{ inputs.expected_head_sha }}
+      compare_refs: ${{ inputs.compare_refs }}
