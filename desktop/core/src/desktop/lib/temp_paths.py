@@ -24,6 +24,7 @@ INDEXER_STAGING_PREFIX = 'hue_indexer_'
 INDEXER_CONFIG_DIR_PREFIX = 'hue_indexer_cfg_'
 LEGACY_TMP_PREFIX = 'tmp'
 TEMP_CLEANUP_LOCK_NAME = 'hue_temp_cleanup.lock'
+ARCHIVE_TEMP_PREFIX = 'hue_archive_'
 SMART_INDEXER_LIB_DIR_NAME = 'smart_indexer_lib'
 HUE_CREATE_DB_DIR_NAME = 'hue_create_db'
 HUE_UPLOADS_DIR_NAME = 'hue_uploads'
@@ -39,6 +40,7 @@ PROTECTED_TMP_PREFIXES = (
   MAKO_DIR_PREFIX,
   VAULT_DIR_PREFIX,
   INDEXER_STAGING_PREFIX,
+  ARCHIVE_TEMP_PREFIX,
 )
 
 

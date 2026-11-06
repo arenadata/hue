@@ -2295,6 +2295,12 @@ TEMP_CLEANUP = ConfigSection(
       type=coerce_bool,
       help=_('Log what would be removed without deleting anything.')
     ),
+    CLEAN_ARCHIVE_TEMPDIR=Config(
+      key='clean_archive_tempdir',
+      default=True,
+      type=coerce_bool,
+      help=_('Remove stale archive upload and extraction leftovers from filebrowser.archive_upload_tempdir.')
+    ),
     CLEAN_LEGACY_MAKO_DIRS=Config(
       key='clean_legacy_mako_dirs',
       default=False,
@@ -2319,6 +2325,12 @@ TEMP_CLEANUP = ConfigSection(
       default=False,
       type=coerce_bool,
       help=_('Remove legacy anonymous indexer copy_configs temp directories during an explicit upgrade cleanup.')
+    ),
+    CLEAN_LEGACY_ARCHIVE_DIRS=Config(
+      key='clean_legacy_archive_dirs',
+      default=False,
+      type=coerce_bool,
+      help=_('Remove legacy anonymous archive extraction directories during an explicit upgrade cleanup.')
     ),
     CLEAN_DJANGO_UPLOADS=Config(
       key='clean_django_uploads',

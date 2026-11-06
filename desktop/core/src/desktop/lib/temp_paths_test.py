@@ -32,6 +32,7 @@ def test_new_hue_artifacts_are_protected_by_prefix(tmp_path):
     _path(tmp_path, 'hue_vault_4000000', 'krb5cc'),
     _path(tmp_path, 'hue_indexer_alice_11111111-2222-3333-4444-555555555555:default;query.csv'),
     _path(tmp_path, 'hue_indexer_cfg_123', 'solr_configs'),
+    _path(tmp_path, temp_paths.ARCHIVE_TEMP_PREFIX + 'extract-old'),
   )
 
   for path in paths:

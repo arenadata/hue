@@ -23,12 +23,16 @@ from io import BytesIO
 import pytest
 from django.test import TestCase
 
+from desktop.lib.temp_paths import ARCHIVE_TEMP_PREFIX
 from filebrowser.lib.archives import IllegalPathException
 
 from . import archives
 
 
 class ArchiveTest(TestCase):
+
+  def assert_archive_tempdir(self, directory):
+    assert os.path.basename(directory).startswith(ARCHIVE_TEMP_PREFIX)
 
   def test_zip_file_like(self):
     buffer = BytesIO()
@@ -37,6 +41,7 @@ class ArchiveTest(TestCase):
     buffer.seek(0)
 
     directory = archives.archive_factory(buffer, 'zip').extract()
+    self.assert_archive_tempdir(directory)
 
     assert os.path.isfile(directory + '/test.txt')
     assert os.path.getsize(directory + '/test.txt') == 4
@@ -68,6 +73,7 @@ class ArchiveTest(TestCase):
     # Extract the file
     # This file should only have 'test.txt' in it
     directory = archives.archive_factory(FILE, 'tgz').extract()
+    self.assert_archive_tempdir(directory)
     assert os.path.exists(directory)
     assert os.path.isdir(directory)
     assert os.path.isfile(directory + '/test.txt')
@@ -101,6 +107,7 @@ class ArchiveTest(TestCase):
     FILE = os.path.realpath('apps/filebrowser/src/filebrowser/test_data/test.txt.bz2')
 
     directory = archives.archive_factory(FILE, 'bz2').extract()
+    self.assert_archive_tempdir(directory)
 
     assert os.path.isfile(directory + '/test.txt')
     assert os.path.getsize(directory + '/test.txt') == 4

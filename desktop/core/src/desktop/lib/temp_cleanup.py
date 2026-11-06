@@ -27,6 +27,7 @@ from collections import defaultdict
 
 from desktop.conf import TEMP_CLEANUP
 from desktop.lib.temp_paths import (
+  ARCHIVE_TEMP_PREFIX,
   INDEXER_CONFIG_DIR_PREFIX,
   INDEXER_STAGING_PREFIX,
   LEGACY_TMP_PREFIX,
@@ -224,12 +225,24 @@ def cleanup_vault_dirs(root=None, ttl_hours=None, dry_run=False, clean_legacy=Fa
   return _cleanup_prefixed_dirs(root, VAULT_DIR_PREFIX, ttl_hours, dry_run, clean_legacy or clean_legacy_vault)
 
 
-def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False):
+def _is_system_tempdir(directory):
+  try:
+    real_directory = os.path.realpath(directory)
+    return real_directory in (os.path.realpath(tempfile.gettempdir()), os.path.realpath(os.path.sep))
+  except OSError:
+    return True
+
+
+def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False, clean_legacy=False):
   ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
   cutoff = _cutoff(ttl_hours)
   removed = []
 
   if not directory or not os.path.isdir(directory):
+    return removed
+
+  if _is_system_tempdir(directory):
+    LOG.warning('Refusing to clean the system temporary directory as an archive tempdir: %s', directory)
     return removed
 
   try:
@@ -242,8 +255,9 @@ def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False):
   for entry in entries:
     try:
       if entry.is_dir(follow_symlinks=False):
-        if _is_old(entry.path, cutoff) and _remove_dir(entry.path, directory, dry_run):
-          removed.append(entry.path)
+        if (entry.name.startswith(ARCHIVE_TEMP_PREFIX) or clean_legacy) and _is_old(entry.path, cutoff):
+          if _remove_dir(entry.path, directory, dry_run):
+            removed.append(entry.path)
         continue
       if not (entry.is_file(follow_symlinks=False) or entry.is_symlink()):
         continue
@@ -253,7 +267,8 @@ def cleanup_archive_tempdir(directory, ttl_hours=None, dry_run=False):
     match = ARCHIVE_PART_PATTERN.match(entry.name)
     if match:
       chunk_groups[match.group('upload_id')].append(entry)
-    elif _is_old(entry.path, cutoff) and _remove_file(entry.path, dry_run):
+    elif (entry.name.startswith(ARCHIVE_TEMP_PREFIX) and _is_old(entry.path, cutoff)
+          and _remove_file(entry.path, dry_run)):
       removed.append(entry.path)
 
   for parts in chunk_groups.values():
@@ -389,6 +404,7 @@ def run_cleanup(
   clean_legacy_empty=None,
   clean_legacy_vault=None,
   clean_legacy_indexer_config=None,
+  clean_legacy_archive=None,
 ):
   ttl_hours = TEMP_CLEANUP.TTL_HOURS.get() if ttl_hours is None else ttl_hours
   dry_run = TEMP_CLEANUP.DRY_RUN.get() if dry_run is None else dry_run
@@ -400,6 +416,9 @@ def run_cleanup(
   clean_legacy_indexer_config = (
     TEMP_CLEANUP.CLEAN_LEGACY_INDEXER_CONFIG_TEMPS.get()
     if clean_legacy_indexer_config is None else clean_legacy_indexer_config
+  )
+  clean_legacy_archive = (
+    TEMP_CLEANUP.CLEAN_LEGACY_ARCHIVE_DIRS.get() if clean_legacy_archive is None else clean_legacy_archive
   )
 
   result = {
@@ -415,7 +434,15 @@ def run_cleanup(
       clean_legacy=clean_legacy,
       clean_legacy_vault=clean_legacy_vault,
     ),
-    'archive': cleanup_archive_tempdir(_get_archive_tempdir(), ttl_hours=ttl_hours, dry_run=dry_run),
+    'archive': (
+      cleanup_archive_tempdir(
+        _get_archive_tempdir(),
+        ttl_hours=ttl_hours,
+        dry_run=dry_run,
+        clean_legacy=clean_legacy_archive,
+      )
+      if TEMP_CLEANUP.CLEAN_ARCHIVE_TEMPDIR.get() else []
+    ),
     'django_uploads': (
       cleanup_django_uploads(ttl_hours=ttl_hours, dry_run=dry_run)
       if TEMP_CLEANUP.CLEAN_DJANGO_UPLOADS.get() else []
@@ -487,6 +514,7 @@ def run_cleanup_locked(
   clean_legacy_empty=None,
   clean_legacy_vault=None,
   clean_legacy_indexer_config=None,
+  clean_legacy_archive=None,
   lock_path=None,
 ):
   file_descriptor = _acquire_lock(_lock_path(lock_path))
@@ -501,6 +529,7 @@ def run_cleanup_locked(
       clean_legacy_empty=clean_legacy_empty,
       clean_legacy_vault=clean_legacy_vault,
       clean_legacy_indexer_config=clean_legacy_indexer_config,
+      clean_legacy_archive=clean_legacy_archive,
     )
   finally:
     _release_lock(file_descriptor)
@@ -514,6 +543,7 @@ def run_cleanup_loop(
   clean_legacy_empty=None,
   clean_legacy_vault=None,
   clean_legacy_indexer_config=None,
+  clean_legacy_archive=None,
   lock_path=None,
   stop_event=None,
 ):
@@ -529,6 +559,7 @@ def run_cleanup_loop(
         clean_legacy_empty=clean_legacy_empty,
         clean_legacy_vault=clean_legacy_vault,
         clean_legacy_indexer_config=clean_legacy_indexer_config,
+        clean_legacy_archive=clean_legacy_archive,
         lock_path=lock_path,
       )
     except Exception as error:
@@ -540,11 +571,20 @@ def run_cleanup_loop(
 
 
 class TempCleanupService(object):
-  def __init__(self, interval_seconds, ttl_hours, dry_run, clean_legacy, lock_path=None):
+  def __init__(
+    self,
+    interval_seconds,
+    ttl_hours,
+    dry_run,
+    clean_legacy,
+    clean_legacy_archive=False,
+    lock_path=None,
+  ):
     self.interval_seconds = interval_seconds
     self.ttl_hours = ttl_hours
     self.dry_run = dry_run
     self.clean_legacy = clean_legacy
+    self.clean_legacy_archive = clean_legacy_archive
     self.lock_path = lock_path or os.path.join(tempfile.gettempdir(), LOCK_FILE_NAME)
     self._stop_event = threading.Event()
     self._thread = None
@@ -579,6 +619,7 @@ class TempCleanupService(object):
         ttl_hours=self.ttl_hours,
         dry_run=self.dry_run,
         clean_legacy=self.clean_legacy,
+        clean_legacy_archive=self.clean_legacy_archive,
         lock_path=self.lock_path,
       )
     except Exception as error:
@@ -606,6 +647,7 @@ def start_temp_cleanup_service():
       ttl_hours=TEMP_CLEANUP.TTL_HOURS.get(),
       dry_run=TEMP_CLEANUP.DRY_RUN.get(),
       clean_legacy=TEMP_CLEANUP.CLEAN_LEGACY_MAKO_DIRS.get(),
+      clean_legacy_archive=TEMP_CLEANUP.CLEAN_LEGACY_ARCHIVE_DIRS.get(),
     )
     _service.start()
     return _service

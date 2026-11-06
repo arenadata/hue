@@ -26,6 +26,7 @@ from django.core.management import call_command
 
 from desktop.conf import TEMP_CLEANUP
 from desktop.lib import temp_cleanup
+from desktop.lib.temp_paths import ARCHIVE_TEMP_PREFIX
 
 DEAD_PID = 4000000
 
@@ -155,20 +156,25 @@ def test_cleanup_legacy_empty_mako_dirs_only_with_explicit_flag(tmp_path):
 
 def test_cleanup_archive_tempdir(tmp_path):
   archive = tmp_path / 'hue_uploads'
-  old_dir = archive / 'extract-old'
-  fresh_dir = archive / 'extract-fresh'
-  old_file = archive / 'old_part'
-  fresh_file = archive / 'fresh_part'
+  old_dir = archive / (ARCHIVE_TEMP_PREFIX + 'extract-old')
+  fresh_dir = archive / (ARCHIVE_TEMP_PREFIX + 'extract-fresh')
+  old_file = archive / (ARCHIVE_TEMP_PREFIX + 'old_part')
+  fresh_file = archive / (ARCHIVE_TEMP_PREFIX + 'fresh_part')
+  foreign_dir = archive / 'foreign-dir'
+  foreign_file = archive / 'foreign_file'
 
-  for directory in (old_dir, fresh_dir):
+  for directory in (old_dir, fresh_dir, foreign_dir):
     directory.mkdir(parents=True)
     (directory / 'file').write_text('data\n')
   old_file.write_text('data\n')
   fresh_file.write_text('data\n')
+  foreign_file.write_text('data\n')
 
   _touch_old(old_dir)
   _touch_old(old_dir / 'file')
   _touch_old(old_file)
+  _touch_old(foreign_dir)
+  _touch_old(foreign_file)
 
   removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1)
 
@@ -176,8 +182,41 @@ def test_cleanup_archive_tempdir(tmp_path):
   assert not old_file.exists()
   assert fresh_dir.exists()
   assert fresh_file.exists()
+  assert foreign_dir.exists()
+  assert foreign_file.exists()
   assert archive.exists()
   assert str(old_dir) in removed
+  assert str(foreign_dir) not in removed
+  assert str(foreign_file) not in removed
+
+
+def test_cleanup_archive_tempdir_legacy_requires_explicit_flag(tmp_path):
+  archive = tmp_path / 'hue_uploads'
+  legacy_dir = archive / 'extract-old'
+  legacy_dir.mkdir(parents=True)
+  (legacy_dir / 'file').write_text('data\n')
+  _touch_old(legacy_dir)
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1)
+  assert legacy_dir.exists()
+  assert str(legacy_dir) not in removed
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1, clean_legacy=True)
+  assert not legacy_dir.exists()
+  assert str(legacy_dir) in removed
+
+
+def test_cleanup_archive_tempdir_refuses_system_tempdir(tmp_path, monkeypatch):
+  monkeypatch.setattr(temp_cleanup.tempfile, 'gettempdir', lambda: str(tmp_path))
+  old_dir = tmp_path / (ARCHIVE_TEMP_PREFIX + 'old')
+  old_dir.mkdir()
+  (old_dir / 'file').write_text('data\n')
+  _touch_old(old_dir)
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(tmp_path), ttl_hours=1, clean_legacy=True)
+
+  assert removed == []
+  assert old_dir.exists()
 
 
 def test_dry_run_does_not_delete(tmp_path):
@@ -315,9 +354,9 @@ def test_cleanup_archive_tempdir_keeps_active_chunk_group(tmp_path):
 
   assert old_part.exists()
   assert fresh_part.exists()
-  assert not old_other.exists()
+  assert old_other.exists()
   assert fresh_other.exists()
-  assert str(old_other) in removed
+  assert str(old_other) not in removed
   assert str(old_part) not in removed
 
 
@@ -419,10 +458,15 @@ def test_cleanup_legacy_indexer_config_dirs_by_signature(tmp_path):
 
 def test_run_cleanup_includes_new_categories(monkeypatch, tmp_path):
   calls = {}
+  archive_calls = []
 
   monkeypatch.setattr(temp_cleanup, 'cleanup_mako_dirs', lambda **kwargs: calls.setdefault('mako', []))
   monkeypatch.setattr(temp_cleanup, 'cleanup_vault_dirs', lambda **kwargs: calls.setdefault('vault', []))
-  monkeypatch.setattr(temp_cleanup, 'cleanup_archive_tempdir', lambda *args, **kwargs: calls.setdefault('archive', []))
+  monkeypatch.setattr(
+    temp_cleanup,
+    'cleanup_archive_tempdir',
+    lambda *args, **kwargs: archive_calls.append(kwargs) or calls.setdefault('archive', []),
+  )
   monkeypatch.setattr(temp_cleanup, 'cleanup_django_uploads', lambda **kwargs: calls.setdefault('django_uploads', []))
   monkeypatch.setattr(temp_cleanup, 'cleanup_indexer_staging', lambda **kwargs: calls.setdefault('indexer_staging', []))
   monkeypatch.setattr(temp_cleanup, 'cleanup_indexer_config_dirs', lambda **kwargs: calls.setdefault('indexer_config', []))
@@ -433,6 +477,7 @@ def test_run_cleanup_includes_new_categories(monkeypatch, tmp_path):
     dry_run=False,
     clean_legacy=False,
     clean_legacy_indexer_config=True,
+    clean_legacy_archive=True,
   )
 
   assert set(result) == {
@@ -445,6 +490,31 @@ def test_run_cleanup_includes_new_categories(monkeypatch, tmp_path):
     'legacy_indexer_config',
   }
   assert set(calls) == set(result)
+  assert archive_calls[0]['clean_legacy'] is True
+
+
+def test_run_cleanup_skips_archive_category_when_disabled(monkeypatch):
+  calls = []
+
+  for name in (
+    'cleanup_mako_dirs',
+    'cleanup_vault_dirs',
+    'cleanup_django_uploads',
+    'cleanup_indexer_staging',
+    'cleanup_indexer_config_dirs',
+    'cleanup_legacy_indexer_config_dirs',
+  ):
+    monkeypatch.setattr(temp_cleanup, name, lambda **kwargs: [])
+  monkeypatch.setattr(temp_cleanup, 'cleanup_archive_tempdir', lambda *args, **kwargs: calls.append(kwargs) or [])
+
+  disabled = TEMP_CLEANUP.CLEAN_ARCHIVE_TEMPDIR.set_for_testing(False)
+  try:
+    result = temp_cleanup.run_cleanup(ttl_hours=1, dry_run=False)
+  finally:
+    disabled()
+
+  assert result['archive'] == []
+  assert calls == []
 
 
 def test_dry_run_does_not_delete_new_categories(tmp_path):

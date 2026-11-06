@@ -71,6 +71,12 @@ class Command(BaseCommand):
       help=_('Also remove legacy anonymous indexer copy_configs temporary directories.')
     )
     parser.add_argument(
+      '--legacy-archive',
+      action='store_true',
+      default=None,
+      help=_('Also remove legacy anonymous archive extraction directories.')
+    )
+    parser.add_argument(
       '--loop',
       action='store_true',
       default=False,
@@ -94,6 +100,10 @@ class Command(BaseCommand):
     clean_legacy_indexer_config = (
       options['legacy_indexer_config']
       if options['legacy_indexer_config'] is not None else TEMP_CLEANUP.CLEAN_LEGACY_INDEXER_CONFIG_TEMPS.get()
+    )
+    clean_legacy_archive = (
+      options['legacy_archive']
+      if options['legacy_archive'] is not None else TEMP_CLEANUP.CLEAN_LEGACY_ARCHIVE_DIRS.get()
     )
     clean_legacy_vault = TEMP_CLEANUP.CLEAN_LEGACY_VAULT_DIRS.get()
 
@@ -132,6 +142,7 @@ class Command(BaseCommand):
           clean_legacy_empty=clean_legacy_empty,
           clean_legacy_vault=clean_legacy_vault,
           clean_legacy_indexer_config=clean_legacy_indexer_config,
+          clean_legacy_archive=clean_legacy_archive,
           stop_event=stop_event,
         )
       finally:
@@ -146,6 +157,7 @@ class Command(BaseCommand):
       clean_legacy_empty=clean_legacy_empty,
       clean_legacy_vault=clean_legacy_vault,
       clean_legacy_indexer_config=clean_legacy_indexer_config,
+      clean_legacy_archive=clean_legacy_archive,
     )
 
     if result is None:
@@ -155,7 +167,7 @@ class Command(BaseCommand):
     self.stdout.write(
       self.style.SUCCESS(
         'Removed mako=%d vault=%d archive=%d django_uploads=%d indexer_staging=%d indexer_config=%d '
-        'legacy_indexer_config=%d item(s) (ttl_hours=%d, dry_run=%s, legacy=%s, legacy_empty=%s)'
+        'legacy_indexer_config=%d item(s) (ttl_hours=%d, dry_run=%s, legacy=%s, legacy_empty=%s, legacy_archive=%s)'
         % (
           len(result['mako']),
           len(result['vault']),
@@ -168,6 +180,7 @@ class Command(BaseCommand):
           dry_run,
           clean_legacy,
           clean_legacy_empty,
+          clean_legacy_archive,
         )
       )
     )
