@@ -172,6 +172,7 @@ def create(request, id, path):
   if not is_admin(request.user):
     raise PopupException(_('You are not a superuser'))
   cluster = get_cluster_or_404(id)
+  is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
   if request.method == 'POST':
     form = CreateZNodeForm(request.POST)
@@ -180,8 +181,22 @@ def create(request, id, path):
 
       full_path = ("%s/%s" % (path, form.cleaned_data['name'])).replace('//', '/')
 
-      zk.create(full_path, form.cleaned_data['data'], sequence=form.cleaned_data['sequence'])
+      try:
+        zk.create(full_path, form.cleaned_data['data'], sequence=form.cleaned_data['sequence'])
+      except ZooKeeper.ZNodeExists:
+        if is_ajax:
+          return JsonResponse({'error': _('Znode already exists: %s') % full_path}, status=409)
+        raise
+      except ZooKeeper.Error as error:
+        if is_ajax:
+          return JsonResponse({'error': str(error) or _('Could not create znode')}, status=400)
+        raise
+
+      if is_ajax:
+        return JsonResponse({'redirect': reverse('zookeeper:tree', kwargs={'id': id, 'path': path})})
       return tree(request, id, path)
+    if is_ajax:
+      return JsonResponse({'error': form.errors.as_text()}, status=400)
   else:
     form = CreateZNodeForm()
 
