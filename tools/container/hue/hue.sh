@@ -188,7 +188,7 @@ elif [[ $1 == start_redis ]]; then
     exit 1
   fi
 elif [[ $1 == temp_cleanup ]]; then
-  $HUE_BIN/hue temp_cleanup --loop
+  exec "$HUE_BIN/hue" temp_cleanup --loop
 fi
 
 exit 0
