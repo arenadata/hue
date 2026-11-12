@@ -19,6 +19,7 @@
 import sys
 import json
 import logging
+import posixpath
 from builtins import map
 
 from django.http import Http404
@@ -162,7 +163,7 @@ def delete(request, id, path):
     except ZooKeeper.NotFound:
       pass
     redir = {
-      'redirect': reverse('zookeeper:tree', kwargs={'id': id, 'path': path[:path.rindex('/')] or '/'})
+      'redirect': reverse('zookeeper:tree', kwargs={'id': id, 'path': posixpath.dirname(path) or '/'})
     }
 
   return JsonResponse(redir)
