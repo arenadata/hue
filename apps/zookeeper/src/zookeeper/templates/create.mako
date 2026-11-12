@@ -44,7 +44,9 @@ ${ shared.menubar() }
 
 ${ shared.header(_breadcrumbs, clusters) }
 
-<form class="createZnodeForm" action="" method="POST">
+<div id="createZnodeError" class="alert alert-error hide"></div>
+
+<form class="createZnodeForm" action="${url('zookeeper:create', id=cluster['id'], path=path)}" method="POST">
   ${ csrf_token(request) | n,unicode }
   ${form.as_table()|n}
   <br/>
@@ -52,6 +54,28 @@ ${ shared.header(_breadcrumbs, clusters) }
   <input type="submit" class="btn btn-primary" value="${ _('Create Znode') }">
   <a class="btn" href="${url('zookeeper:tree', id=cluster['id'], path=path)}">${ _('Cancel') }</a>
 </form>
+
+<script type="text/javascript">
+  $(document).ready(function () {
+    var $form = $(".createZnodeForm");
+    var $error = $("#createZnodeError");
+
+    $form.on("submit", function (event) {
+      event.preventDefault();
+      $error.addClass("hide").text("");
+
+      $.post($form.attr("action"), $form.serialize(), function (data) {
+        var currentPath = window.location.pathname;
+        var appIndex = currentPath.indexOf("/zookeeper/");
+        var base = appIndex > 0 ? currentPath.substring(0, appIndex) : "";
+        location.href = base + data.redirect;
+      }).fail(function (xhr) {
+        var response = xhr.responseJSON || {};
+        $error.removeClass("hide").text(response.error || xhr.statusText || "${ _('Could not create znode') }");
+      });
+    });
+  });
+</script>
 
 
 ${ shared.footer() }

@@ -32,3 +32,14 @@ textarea {
 .tab-pane {
   margin-bottom: 30px;
 }
+
+.sidebar-nav .nav-list > li.white > #removeBtn {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 30px);
+  margin: 0 -15px;
+  padding: 9px 18px;
+  line-height: 20px;
+  font-size: 14px;
+  text-align: center;
+}
