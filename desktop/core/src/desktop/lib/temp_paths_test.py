@@ -17,6 +17,8 @@
 
 import os
 
+import pytest
+
 from desktop.lib import temp_paths
 
 
@@ -75,3 +77,31 @@ def test_default_root_is_the_platform_temp_directory(tmp_path, monkeypatch):
 
 def test_lock_file_name_is_shared_with_the_cleaner():
   assert temp_paths.TEMP_CLEANUP_LOCK_NAME == 'hue_temp_cleanup.lock'
+
+
+def test_regular_paths_can_be_removed(tmp_path):
+  regular = tmp_path / 'regular'
+  regular.write_text('data\n')
+
+  assert temp_paths.can_remove_tmp_path(str(regular), root=str(tmp_path))
+
+
+def test_protected_paths_cannot_be_removed(tmp_path):
+  protected = tmp_path / 'hue_mako_4000000_dead'
+  protected.mkdir()
+
+  assert not temp_paths.can_remove_tmp_path(str(protected), root=str(tmp_path))
+
+
+def test_symlinks_cannot_be_removed(tmp_path):
+  target = tmp_path / 'target'
+  target.write_text('data\n')
+  link = tmp_path / 'link'
+
+  try:
+    os.symlink(str(target), str(link))
+  except (OSError, NotImplementedError):
+    pytest.skip('symlinks are unavailable on this platform')
+
+  assert not temp_paths.can_remove_tmp_path(str(link), root=str(tmp_path))
+  assert target.exists()

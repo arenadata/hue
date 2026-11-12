@@ -246,6 +246,43 @@ def test_symlinks_are_not_followed(tmp_path):
   assert os.path.islink(str(link))
 
 
+def test_matching_file_symlinks_are_not_removed(tmp_path):
+  target = tmp_path / 'target'
+  target.write_text('keep\n')
+  link = tmp_path / 'tmpabc.upload.txt'
+  try:
+    os.symlink(str(target), str(link))
+  except (OSError, NotImplementedError):
+    pytest.skip('symlinks are unavailable on this platform')
+
+  removed = temp_cleanup.cleanup_django_uploads(str(tmp_path), ttl_hours=1)
+
+  assert not removed
+  assert os.path.islink(str(link))
+  assert target.exists()
+
+
+def test_archive_symlinks_are_unlinked_without_following(tmp_path):
+  archive = tmp_path / 'hue_uploads'
+  archive.mkdir()
+  target = tmp_path / 'target'
+  target.write_text('keep\n')
+  link = archive / (ARCHIVE_TEMP_PREFIX + 'link')
+  try:
+    os.symlink(str(target), str(link))
+  except (OSError, NotImplementedError):
+    pytest.skip('symlinks are unavailable on this platform')
+
+  timestamp = time.time() - 2 * 3600
+  os.utime(str(link), (timestamp, timestamp), follow_symlinks=False)
+
+  removed = temp_cleanup.cleanup_archive_tempdir(str(archive), ttl_hours=1)
+
+  assert str(link) in removed
+  assert not os.path.lexists(str(link))
+  assert target.exists()
+
+
 def test_is_server_process():
   assert temp_cleanup.is_server_process(['hue', 'runserver'])
   assert temp_cleanup.is_server_process(['hue', 'rungunicornserver'])

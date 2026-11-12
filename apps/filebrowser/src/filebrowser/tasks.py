@@ -31,7 +31,7 @@ from desktop.auth.backend import rewrite_user
 from desktop.celery import app
 from desktop.conf import TASK_SERVER_V2
 from desktop.lib import fsmanager
-from desktop.lib.temp_paths import is_protected_tmp_path as _is_protected_tmp_path
+from desktop.lib.temp_paths import can_remove_tmp_path
 from filebrowser.utils import release_reserved_space_for_file_uploads, reserve_space_for_file_uploads
 
 if hasattr(TASK_SERVER_V2, 'get') and TASK_SERVER_V2.ENABLED.get():
@@ -172,12 +172,11 @@ def check_disk_usage_and_clean_task(**kwargs):
     for root, dirs, files in os.walk(directory):
       dirs[:] = [
         directory_name for directory_name in dirs
-        if not _is_protected_tmp_path(os.path.join(root, directory_name))
-        and not os.path.islink(os.path.join(root, directory_name))
+        if can_remove_tmp_path(os.path.join(root, directory_name))
       ]
       for file in files:
         file_path = os.path.join(root, file)
-        if _is_protected_tmp_path(file_path) or os.path.islink(file_path):
+        if not can_remove_tmp_path(file_path):
           continue
         try:
           file_modified_time = datetime.fromtimestamp(os.path.getmtime(file_path))

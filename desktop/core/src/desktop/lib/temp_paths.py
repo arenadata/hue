@@ -58,3 +58,7 @@ def is_protected_tmp_path(path, root=None):
       return True
 
   return False
+
+
+def can_remove_tmp_path(path, root=None):
+  return not is_protected_tmp_path(path, root=root) and not os.path.islink(path)
