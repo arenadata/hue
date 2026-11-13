@@ -31,6 +31,7 @@ from desktop.auth.backend import rewrite_user
 from desktop.celery import app
 from desktop.conf import TASK_SERVER_V2
 from desktop.lib import fsmanager
+from desktop.lib.temp_paths import can_remove_tmp_path
 from filebrowser.utils import release_reserved_space_for_file_uploads, reserve_space_for_file_uploads
 
 if hasattr(TASK_SERVER_V2, 'get') and TASK_SERVER_V2.ENABLED.get():
@@ -169,13 +170,19 @@ def check_disk_usage_and_clean_task(**kwargs):
 
   def delete_old_files(directory, current_time, time_delta):
     for root, dirs, files in os.walk(directory):
+      dirs[:] = [
+        directory_name for directory_name in dirs
+        if can_remove_tmp_path(os.path.join(root, directory_name))
+      ]
       for file in files:
         file_path = os.path.join(root, file)
+        if not can_remove_tmp_path(file_path):
+          continue
         try:
           file_modified_time = datetime.fromtimestamp(os.path.getmtime(file_path))
           file_modified_time = timezone.make_aware(file_modified_time, timezone.get_default_timezone())
           if file_modified_time < current_time - time_delta:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
+            if os.path.isfile(file_path):
               os.unlink(file_path)
               LOG.info(f"Deleted file {file_path}")
         except PermissionError:

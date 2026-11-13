@@ -172,9 +172,13 @@ def import_workflow(request):
         if source.name.endswith('.zip'):
           workflow.save()
           Workflow.objects.initialize(workflow, request.fs)
-          temp_path = archive_factory(source).extract()
-          request.fs.copyFromLocal(temp_path, workflow.deployment_dir)
-          shutil.rmtree(temp_path)
+          temp_path = None
+          try:
+            temp_path = archive_factory(source).extract()
+            request.fs.copyFromLocal(temp_path, workflow.deployment_dir)
+          finally:
+            if temp_path:
+              shutil.rmtree(temp_path, ignore_errors=True)
         else:
           raise PopupException(_('Archive should be a Zip.'))
       else:
@@ -229,9 +233,13 @@ def import_coordinator(request):
         # Upload resources to workspace
         source = coordinator_form.cleaned_data.get('resource_archive')
         if source.name.endswith('.zip'):
-          temp_path = archive_factory(source).extract()
-          request.fs.copyFromLocal(temp_path, coordinator.deployment_dir)
-          shutil.rmtree(temp_path)
+          temp_path = None
+          try:
+            temp_path = archive_factory(source).extract()
+            request.fs.copyFromLocal(temp_path, coordinator.deployment_dir)
+          finally:
+            if temp_path:
+              shutil.rmtree(temp_path, ignore_errors=True)
         else:
           Coordinator.objects.filter(id=coordinator.id).delete()
           raise PopupException(_('Archive should be a Zip.'))

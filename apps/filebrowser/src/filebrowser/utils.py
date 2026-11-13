@@ -44,35 +44,53 @@ def calculate_total_size(uuid, totalparts):
   return total
 
 
+def cleanup_upload_chunks(uuid, totalparts):
+  if not uuid or totalparts is None:
+    return
+  for index in range(totalparts):
+    file_path = os.path.join(ARCHIVE_UPLOAD_TEMPDIR.get(), f'{uuid}_{index}')
+    try:
+      os.remove(file_path)
+    except FileNotFoundError:
+      continue
+    except OSError as error:
+      LOG.warning("Failed to remove temporary upload chunk '%s': %s", file_path, error)
+
+
 def generate_chunks(uuid, totalparts, default_write_size=DEFAULT_WRITE_SIZE):
   fp = io.BytesIO()
   total = 0
   files = [os.path.join(ARCHIVE_UPLOAD_TEMPDIR.get(), f'{uuid}_{i}') for i in range(totalparts)]
-  for file_path in files:
-    with open(file_path, 'rb') as f:
-      while True:
-        # Read the file in portions, e.g., 1MB at a time
-        portion = f.read(1 * 1024 * 1024)
-        if not portion:
-          break
-        fp.write(portion)
-        total = total + len(portion)
-        # If buffer size is more than 128MB, yield the chunk
-        if fp.tell() >= default_write_size:
-          fp.seek(0)
-          yield fp, total
-          fp.close()
-          fp = io.BytesIO()
-  # Yield any remaining data in the buffer
-  if fp.tell() > 0:
-    fp.seek(0)
-    yield fp, total + fp.tell()
-    fp.close()
-  # chances are the chunk is zero and we never yielded
-  else:
-    fp.close()
-  for file_path in files:
-    os.remove(file_path)
+  try:
+    for file_path in files:
+      with open(file_path, 'rb') as f:
+        while True:
+          # Read the file in portions, e.g., 1MB at a time
+          portion = f.read(1 * 1024 * 1024)
+          if not portion:
+            break
+          fp.write(portion)
+          total = total + len(portion)
+          # If buffer size is more than 128MB, yield the chunk
+          if fp.tell() >= default_write_size:
+            fp.seek(0)
+            yield fp, total
+            fp.close()
+            fp = io.BytesIO()
+    # Yield any remaining data in the buffer
+    if fp.tell() > 0:
+      fp.seek(0)
+      yield fp, total + fp.tell()
+      fp.close()
+    # chances are the chunk is zero and we never yielded
+    else:
+      fp.close()
+  finally:
+    try:
+      fp.close()
+    except OSError:
+      pass
+    cleanup_upload_chunks(uuid, totalparts)
 
 
 def parse_broker_url(broker_url):

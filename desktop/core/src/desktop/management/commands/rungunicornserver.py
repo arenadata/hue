@@ -184,6 +184,7 @@ def argprocessing(args=[], options={}):
   # Currently gunicorn does not support passphrase suppored SSL Keyfile
   # https://github.com/benoitc/gunicorn/issues/2410
   ssl_keyfile = None
+  ssl_keyfile_is_temp = False
   worker_tmp_dir = os.environ.get("HUE_CONF_DIR", get_desktop_root("conf"))
   if not worker_tmp_dir:
     worker_tmp_dir = "/tmp"
@@ -197,9 +198,11 @@ def argprocessing(args=[], options={}):
                                           crypto.load_privatekey(crypto.FILETYPE_PEM,
                                                                  f.read(), ssl_password)))
           ssl_keyfile = tf.name
+          ssl_keyfile_is_temp = True
     else:
       ssl_keyfile = conf.SSL_PRIVATE_KEY.get()
   options['ssl_keyfile'] = ssl_keyfile
+  options['ssl_keyfile_is_temp'] = ssl_keyfile_is_temp
 
 
 def rungunicornserver(args=[], options={}):
@@ -265,7 +268,14 @@ def rungunicornserver(args=[], options={}):
       'post_worker_init': post_worker_init,
       'worker_int': worker_int
   }
-  StandaloneApplication(handler_app, gunicorn_options).run()
+  try:
+    StandaloneApplication(handler_app, gunicorn_options).run()
+  finally:
+    if options.get('ssl_keyfile_is_temp') and options.get('ssl_keyfile'):
+      try:
+        os.remove(options['ssl_keyfile'])
+      except OSError:
+        pass
 
 
 def start_server(args, options):

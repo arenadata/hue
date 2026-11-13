@@ -100,6 +100,7 @@ from filebrowser.forms import (
 from filebrowser.lib import xxd
 from filebrowser.lib.archives import archive_factory
 from filebrowser.lib.rwx import filetype, rwx
+from filebrowser.utils import cleanup_upload_chunks
 from hadoop.conf import UPLOAD_CHUNK_SIZE
 from hadoop.core_site import get_trash_interval
 from hadoop.fs.exceptions import WebHdfsException
@@ -1488,20 +1489,28 @@ def perform_upload_task(request, *args, **kwargs):
   if TASK_SERVER_V2.ENABLED.get():
     # If task server is enabled, upload the file to the task server.
     print("Uploading file to task server")
-    _fs = upload_class(request, **kwargs)
-    _fs.check_access()
-    from filebrowser.tasks import error_handler, upload_file_task
-    kwargs["user_id"] = request.user.id
-    kwargs["scheme"] = scheme
-    kwargs["filepath"] = _fs.filepath
-    kwargs["chunk_size"] = _fs.chunk_size
-    task_id = kwargs.get("qquuid")
-    upload_file_task.apply_async(task_id=task_id, args=(), kwargs=kwargs, link_error=error_handler.s(), queue="default")
+    try:
+      _fs = upload_class(request, **kwargs)
+      _fs.check_access()
+      from filebrowser.tasks import error_handler, upload_file_task
+      kwargs["user_id"] = request.user.id
+      kwargs["scheme"] = scheme
+      kwargs["filepath"] = _fs.filepath
+      kwargs["chunk_size"] = _fs.chunk_size
+      task_id = kwargs.get("qquuid")
+      upload_file_task.apply_async(task_id=task_id, args=(), kwargs=kwargs, link_error=error_handler.s(), queue="default")
+    except Exception:
+      cleanup_upload_chunks(kwargs.get('qquuid'), kwargs.get('qqtotalparts'))
+      raise
     result = "task started %s" % task_id
     logger.info("Task started %s" % task_id)
   else:
-    _fs = upload_class(request, **kwargs)
-    _fs.upload()
+    try:
+      _fs = upload_class(request, **kwargs)
+      _fs.upload()
+    except Exception:
+      cleanup_upload_chunks(kwargs.get('qquuid'), kwargs.get('qqtotalparts'))
+      raise
     if scheme == 'hdfs':
       result = _massage_stats(request, stat_absolute_path(_fs.filepath, request.fs.stats(_fs.filepath)))
     else:

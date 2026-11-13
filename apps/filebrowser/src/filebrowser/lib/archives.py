@@ -19,6 +19,7 @@
 
 import os
 import bz2
+import shutil
 import tarfile
 import tempfile
 import posixpath
@@ -29,9 +30,18 @@ from django.utils.translation import gettext as _
 from past.builtins import basestring
 
 from desktop.lib.exceptions_renderable import PopupException
+from desktop.lib.temp_paths import ARCHIVE_TEMP_PREFIX
 from filebrowser.conf import ARCHIVE_UPLOAD_TEMPDIR
 
 __all__ = ['archive_factory']
+
+
+def _archive_tempdir():
+  return ARCHIVE_UPLOAD_TEMPDIR.get() or None
+
+
+def _make_temp_dir():
+  return tempfile.mkdtemp(prefix=ARCHIVE_TEMP_PREFIX, dir=_archive_tempdir())
 
 
 class Archive(object):
@@ -68,7 +78,7 @@ class ZipArchive(Archive):
   """
 
   def __init__(self, file):
-    self.file = isinstance(file, basestring) and file
+    self.file = file
 
     self.zfh = ZipFile(self.file)
 
@@ -79,14 +89,15 @@ class ZipArchive(Archive):
     Else, open a file for writing and meta pipe the contents zipfile to the new file.
     """
     # Store all extracted files in a temporary directory.
-    if ARCHIVE_UPLOAD_TEMPDIR.get():
-      directory = tempfile.mkdtemp(dir=ARCHIVE_UPLOAD_TEMPDIR.get())
-    else:
-      directory = tempfile.mkdtemp()
+    directory = _make_temp_dir()
 
-    dirs, files = self._filenames()
-    self._create_dirs(directory, dirs)
-    self._create_files(directory, files)
+    try:
+      dirs, files = self._filenames()
+      self._create_dirs(directory, dirs)
+      self._create_files(directory, files)
+    except Exception:
+      shutil.rmtree(directory, ignore_errors=True)
+      raise
 
     return directory
 
@@ -130,12 +141,14 @@ class TarballArchive(Archive):
   Python's ZipFile class inherently buffers all reading.
   """
   def __init__(self, file):
+    self._temporary_path = None
     if isinstance(file, basestring):
       self.path = file
     else:
-      f = tempfile.NamedTemporaryFile(delete=False)
+      f = tempfile.NamedTemporaryFile(prefix=ARCHIVE_TEMP_PREFIX, delete=False, dir=_archive_tempdir())
       f.write(file.read())
       self.path = f.name
+      self._temporary_path = f.name
       f.close()
     self.fh = tarfile.open(self.path)
 
@@ -146,13 +159,29 @@ class TarballArchive(Archive):
     Else, open a file for writing and meta pipe the contents zipfile to the new file.
     """
     # Store all extracted files in a temporary directory.
-    directory = tempfile.mkdtemp()
+    directory = _make_temp_dir()
 
-    dirs, files = self._filenames()
-    self._create_dirs(directory, dirs)
-    self._create_files(directory, files)
+    try:
+      dirs, files = self._filenames()
+      self._create_dirs(directory, dirs)
+      self._create_files(directory, files)
+    except Exception:
+      shutil.rmtree(directory, ignore_errors=True)
+      raise
+    finally:
+      self._cleanup()
 
     return directory
+
+  def _cleanup(self):
+    try:
+      self.fh.close()
+    finally:
+      if self._temporary_path:
+        try:
+          os.remove(self._temporary_path)
+        except OSError:
+          pass
 
   def _filenames(self):
     """
@@ -196,14 +225,18 @@ class BZ2Archive(Archive):
 
   def __init__(self, file):
     # bzip2 only compresses single files and there is no direct method in the bz2 library to get the file name
-    self.name = file.name[:-6] if file.name.lower().endswith('.bzip2') else file.name[:-4]
+    source_name = file if isinstance(file, basestring) else file.name
+    source_name = os.path.basename(source_name)
+    self.name = source_name[:-6] if source_name.lower().endswith('.bzip2') else source_name[:-4]
+    self._temporary_path = None
 
     if isinstance(file, basestring):
       self.path = file
     else:
-      f = tempfile.NamedTemporaryFile(delete=False)
+      f = tempfile.NamedTemporaryFile(prefix=ARCHIVE_TEMP_PREFIX, delete=False, dir=_archive_tempdir())
       f.write(file.read())
       self.path = f.name
+      self._temporary_path = f.name
       f.close()
     self.fh = bz2.BZ2File(self.path)
 
@@ -213,15 +246,28 @@ class BZ2Archive(Archive):
     Opens the file for writing and meta pipe the contents bz2file to the new file.
     """
     # Store all extracted files in a temporary directory.
-    if ARCHIVE_UPLOAD_TEMPDIR.get():
-      directory = tempfile.mkdtemp(dir=ARCHIVE_UPLOAD_TEMPDIR.get())
-    else:
-      directory = tempfile.mkdtemp()
+    directory = _make_temp_dir()
 
-    files = [self.name]
-    self._create_files(directory, files)
+    try:
+      files = [self.name]
+      self._create_files(directory, files)
+    except Exception:
+      shutil.rmtree(directory, ignore_errors=True)
+      raise
+    finally:
+      self._cleanup()
 
     return directory
+
+  def _cleanup(self):
+    try:
+      self.fh.close()
+    finally:
+      if self._temporary_path:
+        try:
+          os.remove(self._temporary_path)
+        except OSError:
+          pass
 
   def _create_files(self, basepath, files=[]):
     """
@@ -229,9 +275,8 @@ class BZ2Archive(Archive):
     """
     for f in files:
       new_path = os.path.join(basepath, f)
-      new_file = open(new_path, 'w')
-      new_file.write(self.fh.read())
-      new_file.close()
+      with open(new_path, 'wb') as new_file:
+        new_file.write(self.fh.read())
 
 
 def archive_factory(path, archive_type='zip'):
