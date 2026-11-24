@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
@@ -121,6 +122,21 @@ class TestJdbcApiStarrocks(TestCase):
         {'name': 'id', 'type': 'int', 'comment': ''},
         {'name': 'name', 'type': 'varchar', 'comment': ''},
       ]
+
+  def test_get_sample_data_called_like_notebook_api(self):
+    # Regression: api.py calls get_sample_data(snippet, db, table, column, nested, is_async=..., operation=...)
+    # Missing nested caused TypeError: got multiple values for argument 'is_async'
+    rows = [['1']]
+    description = [('id', 'int')]
+    with patch.object(StarrocksAssist, 'get_sample_data', return_value=(rows, description)):
+      response = self._make_api().get_sample_data({}, 'default_catalog.my_db', 'my_table', None, None, is_async=False, operation=None)
+      assert response['status'] == 0
+
+  def test_get_sample_data_signature_matches_base(self):
+    # Contract: if JdbcApi.get_sample_data signature changes, this must be updated too
+    expected = ['self', 'snippet', 'database', 'table', 'column', 'nested', 'is_async', 'operation']
+    starrocks_params = inspect.signature(JdbcApiStarrocks.get_sample_data).parameters
+    assert list(starrocks_params.keys()) == expected
 
   def test_get_sample_data_empty(self):
     with patch.object(StarrocksAssist, 'get_sample_data', return_value=([], [])):

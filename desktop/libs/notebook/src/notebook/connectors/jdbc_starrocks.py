@@ -88,7 +88,7 @@ class JdbcApiStarrocks(JdbcApi):
     response['status'] = 0
     return response
 
-  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
+  def get_sample_data(self, snippet, database=None, table=None, column=None, nested=None, is_async=False, operation=None):
     if self.db is None:
       raise AuthenticationRequired()
 
