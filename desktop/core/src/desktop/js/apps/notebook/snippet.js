@@ -28,6 +28,7 @@ import huePubSub from 'utils/huePubSub';
 import { getFromLocalStorage, setInLocalStorage } from 'utils/storageUtils';
 import Result from 'apps/notebook/result';
 import Session from 'apps/notebook/session';
+import { syncHandleCursor } from 'apps/notebook/snippetCursorSync';
 import { getStatementsParser } from 'parse/utils';
 import { SHOW_EVENT as SHOW_GIST_MODAL_EVENT } from 'ko/components/ko.shareGistModal';
 import { cancelActiveRequest } from 'api/apiUtils';
@@ -1861,11 +1862,7 @@ class Snippet {
             self.result.handle(data.handle);
             self.result.hasResultset(data.handle.has_result_set);
 
-            if (self.type() === 'trino') {
-              const existing_handle = self.result.handle();
-              existing_handle.row_count = data.handle.row_count;
-              existing_handle.next_uri = data.handle.next_uri;
-            }
+            syncHandleCursor(self.result.handle(), data.handle);
             self.showLogs(true);
             if (data.handle.sync) {
               self.loadData(data.result, 100);
@@ -2192,11 +2189,7 @@ class Snippet {
                 self.showExecutionAnalysis(true);
                 self.loadData(data.result, rows);
 
-                if (self.type() === 'trino') {
-                  const existing_handle = self.result.handle();
-                  existing_handle.row_count = data.result.row_count;
-                  existing_handle.next_uri = data.result.next_uri;
-                }
+                syncHandleCursor(self.result.handle(), data.result);
               } else {
                 self._ajaxError(data, () => {
                   self.isFetchingData = false;
@@ -2366,11 +2359,7 @@ class Snippet {
                   self.status() == 'starting' ||
                   self.status() == 'waiting'
                 ) {
-                  if (self.type() === 'trino') {
-                    const existing_handle = self.result.handle();
-                    existing_handle.row_count = 0;
-                    existing_handle.next_uri = data.query_status.next_uri;
-                  }
+                  syncHandleCursor(self.result.handle(), data.query_status, 0);
                   const delay = self.result.executionTime() > 45000 ? 5000 : 1000; // 5s if more than 45s
                   if (!notebook.unloaded()) {
                     self.checkStatusTimeout = setTimeout(_checkStatus, delay);
